@@ -1,0 +1,21 @@
+rgb_image: "/camera/color/image_raw"
+depth_image: "/camera/aligned_depth_to_color/image_raw"
+camera_info: "/camera/depth/camera_info"
+
+#rgb_image: "/depth_camera/depth_camera/image_raw"
+#depth_image: "/depth_camera/depth/disparity"
+#camera_info: "/depth_camera/depth_camera/camera_info"
+
+inspection_dist: 1.0   
+
+kp_x: 0.3
+kd_x: 0.0
+ki_x: 0.0
+
+kp_y: 0.15
+kd_y: 0.0
+ki_y: 0.0
+
+kp_z: 0.15
+kd_z: 0.0
+ki_z: 0.0

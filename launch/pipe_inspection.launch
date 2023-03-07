@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<launch>
+
+  <rosparam command="load" file="$(find landing_point_detection)/conf/params.yaml" />
+
+  <!-- Parmas SIMU  -->
+  <arg name="rgb_image" default="/camera/color/image_raw" />
+  <arg name="depth_image" default="/camera/depth/image_raw" />
+  <arg name="camera_info" default="/camera/depth/camera_info" />
+	
+
+  <!-- Parmas REAL 
+  <arg name="rgb_image" default="/d400/color/image_raw" />
+  <arg name="depth_image" default="/d400/aligned_depth_to_color/image_raw" />
+  <arg name="camera_info" default="/d400/depth/camera_info" />
+  --> 
+
+  <arg name="pipe_detector" default="/pipes_detector/pipes" />
+  <arg name="frame_camera" default="/camera_depth_optical_frame" />
+  <arg name="frame_drone" default="/base_link" />
+
+  <arg name="inspection_dist"   default="0.8" />
+  <arg name="maximum_vel"       default="0.1" />
+  <arg name="velocity_cmd_pid"  default="false" /> <!--REVISAR-->
+  <arg name="debug_imgs"        default="true" />
+  <arg name="debug_msgs"        default="true" />
+
+  <arg name="pos_x_first"       default="-3.123" />
+  <arg name="pos_y_first"       default="2.6" />
+  <arg name="pos_z_first"       default="0.5" />
+
+
+  <!-- Start pipe_detector-->
+  <!--  <node pkg="pipe_detector" type="pipe_detector" name="pipe_detector" output="screen">
+  </node>
+  -->
+  <!-- Start pipe_inspection_drone-->
+
+  <node pkg="landing_point_detection" type="landing_point_detection" name="landing_point_detection" output="screen">
+    <param name="rgb_image"          value="$(arg rgb_image)" />
+    <param name="depth_image"        value="$(arg depth_image)" />
+    <param name="camera_info"        value="$(arg camera_info)" />
+    <param name="pipe_detector"      value="$(arg pipe_detector)" />
+    <param name="frame_camera"       value="$(arg frame_camera)" />
+    <param name="frame_drone"        value="$(arg frame_drone)" />
+    <param name="inspection_dist"    value="$(arg inspection_dist)" />
+    <param name="maximum_vel"        value="$(arg maximum_vel)" />
+    <param name="velocity_cmd_pid"   value="$(arg velocity_cmd_pid)" />
+    <param name="debug_imgs"         value="$(arg debug_imgs)" />
+    <param name="debug_msgs"         value="$(arg debug_msgs)" />
+    <param name="pos_x_first"         value="$(arg pos_x_first)" />
+    <param name="pos_y_first"         value="$(arg pos_y_first)" />
+    <param name="pos_z_first"         value="$(arg pos_z_first)" />
+  </node>
+
+</launch>
