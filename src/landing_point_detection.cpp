@@ -18,6 +18,7 @@
 #include <opencv2/opencv.hpp>
 #include <Eigen/Dense>
 #include <mutex>
+#include "geometry_msgs/Twist.h"
 
 using namespace std;
 using namespace Eigen;
@@ -233,7 +234,7 @@ class PIPE_INSPECTION {
 
         void run();
         void img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const sensor_msgs::ImageConstPtr &depth_msg);
-        int pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls, cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img );
+        int pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat,  cv::Mat depth, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls, cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img, geometry_msgs::Twist & lp );
        
     private:
 
@@ -242,6 +243,7 @@ class PIPE_INSPECTION {
         message_filters::Subscriber<sensor_msgs::Image> _depth_sub;
 
         ros::Publisher _img_elaboration_output_pub;
+        ros::Publisher _landing_point_pub;
 
         typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image,
                                                                 sensor_msgs::Image> MySyncPolicy;
@@ -296,7 +298,7 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
 
     _velocity_data_pub = _nh.advertise< geometry_msgs::Twist > ("/auto_control/twist", 1 );
     _img_elaboration_output_pub = _nh.advertise< sensor_msgs::Image > ("/pipe_line_extraction/elaboration/compressed", 1);
-
+    _landing_point_pub = _nh.advertise< geometry_msgs::Twist> ("/landing_point", 1);
     if( !_nh.getParam("rgb_image", _rgb_topic) ) {
         _rgb_topic =  "/camera/color/image_raw";
     }
@@ -441,7 +443,7 @@ bool polyfit( const std::vector<double> &t,
 }
 
 //Function implementing the pipe axis detection
-int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls,  cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img ) {
+int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat, cv::Mat depth, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls,  cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img, geometry_msgs::Twist & lp ) {
     
     double min;
     double max;
@@ -655,9 +657,15 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
 
         circle(mask2, cv::Point(mX, mY), 5, cv::Scalar(0,255,0), -1);
 
-        circle(mask2, cv::Point(x_SG[0],y_SG[0]), 5, cv::Scalar(0,255,0), -1);
-        circle(mask2, cv::Point(x_SG[x_SG.size()-1],y_SG[y_SG.size()-1]), 5, cv::Scalar(0,255,0), -1);
+        //circle(mask2, cv::Point(x_SG[0],y_SG[0]), 5, cv::Scalar(0,255,0), -1);
+        //circle(mask2, cv::Point(x_SG[x_SG.size()-1],y_SG[y_SG.size()-1]), 5, cv::Scalar(0,255,0), -1);
 
+
+        float depth_cpxl = depth.at<float>(mY, mX ); //Distance from the pipe
+        //depth_cpxl *= 100;
+        lp.linear.x = (depth_cpxl) * ( (mX - _cx) * _fx_inv );
+        lp.linear.y = (depth_cpxl) * ( (mY - _cy) * _fy_inv );
+        lp.linear.z = depth_cpxl;
 
         output_img = mask2;
         //imshow("skel", mask2);
@@ -667,8 +675,11 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         //        rotation
 
     }
-    else 
+    else { 
         output_img = mask2;
+        lp.linear.x = lp.linear.y = lp.linear.z = -1;
+        lp.angular.x = lp.angular.y = lp.angular.z = -1;
+    }
     return 1;
 }
 
@@ -678,7 +689,7 @@ void PIPE_INSPECTION::img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const se
     cv_bridge::CvImagePtr cv_ptr_rgb, cv_ptr_depth;
     try {
        cv_ptr_rgb = cv_bridge::toCvCopy(rgb_msg, sensor_msgs::image_encodings::TYPE_8UC3);
-       cv_ptr_depth = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::TYPE_16UC1);
+       cv_ptr_depth = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::TYPE_32FC1);
     }
     catch (cv_bridge::Exception& e) {
        ROS_ERROR("cv_bridge exception: %s", e.what());
@@ -688,6 +699,8 @@ void PIPE_INSPECTION::img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const se
     img_mutex.lock();
     _rgb = cv_ptr_rgb->image;
     _depth = cv_ptr_depth->image;
+
+    //cout << _depth.at<float>(240, 320 )   << endl;    
     _first_img = true;
     img_mutex.unlock();
 }
@@ -764,8 +777,8 @@ void PIPE_INSPECTION::inspection()  {
         //imshow( "depth_normalized", _depth_normalized);
         //cv::waitKey(1);
         cv::Mat output_img;
-        
-        int error = pipeAxis_detect(_depth_normalized, depthfloat, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img);     
+        geometry_msgs::Twist lp;
+        int error = pipeAxis_detect(_depth_normalized, depthfloat, depth, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img, lp);     
         //
         /*
         if (error == -1) {
@@ -782,21 +795,11 @@ void PIPE_INSPECTION::inspection()  {
         _n_not_axis=0;
 
         
-       
-      
         */
-        //for(uint i=0;i<pipeAxis_pxls.size();i++)
-        //    circle(mask2, pipeAxis_pxls[i],1,cv::Scalar(255,0,255));
+        cv_ptr.image = output_img;
+        _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
+        _landing_point_pub.publish( lp );
         
-        //if( !_start_tracking ) {
-            cv_ptr.image = output_img;
-            //imshow("mask2", mask2 );
-            //cv::waitKey(1);
-            //_img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );
-            _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
-            //continue;
-        //} 
-
         rate.sleep();
     }
 }
