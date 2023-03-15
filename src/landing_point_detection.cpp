@@ -134,7 +134,7 @@ public:
  
     // Function that print the best
     // fitting line
-    void PrintBestFittingLine()
+    void PrintBestFittingLine(float & coeff_ )
     {
         if (coeff == 0 && constTerm == 0) {
             calculateCoefficient();
@@ -143,7 +143,8 @@ public:
         cout << "The best fitting line is y = "
              << coeff << "x + " << constTerm << endl;
 
-        cout << "Orientation: " << atan( coeff ) << endl;
+        coeff_ = atan(coeff);
+        cout << "Orientation: " << coeff_ << endl;
     }
  
     // Function to take input from the dataset
@@ -649,7 +650,8 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
 
 
     if( x_SG.size() > 0 ) {
-        reg->PrintBestFittingLine();
+        float coeff;
+        reg->PrintBestFittingLine(coeff);
 
         //landing point: the mean one
         float mX = (x_SG[ x_SG.size()-1] + x_SG[0]) / 2.0;
@@ -666,6 +668,8 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         lp.linear.x = (depth_cpxl) * ( (mX - _cx) * _fx_inv );
         lp.linear.y = (depth_cpxl) * ( (mY - _cy) * _fy_inv );
         lp.linear.z = depth_cpxl;
+        //
+        lp.angular.z = coeff;
 
         output_img = mask2;
         //imshow("skel", mask2);
