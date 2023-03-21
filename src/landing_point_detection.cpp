@@ -10,6 +10,8 @@
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <tf/transform_listener.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/TransformStamped.h>
 #include <std_msgs/Bool.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/Image.h>
@@ -19,6 +21,8 @@
 #include <Eigen/Dense>
 #include <mutex>
 #include "geometry_msgs/Twist.h"
+#include <geometry_msgs/PoseStamped.h>
+#include "utils.h"
 
 using namespace std;
 using namespace Eigen;
@@ -234,7 +238,7 @@ class PIPE_INSPECTION {
 
         void run();
         void img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const sensor_msgs::ImageConstPtr &depth_msg);
-        int pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat,  cv::Mat depth, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls, cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img, geometry_msgs::Twist & lp );
+        int pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat,  cv::Mat depth, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls, cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img, geometry_msgs::TwistStamped & lp ,geometry_msgs::PoseStamped & landing_vect_pos);
        
     private:
 
@@ -244,6 +248,8 @@ class PIPE_INSPECTION {
 
         ros::Publisher _img_elaboration_output_pub;
         ros::Publisher _landing_point_pub;
+        ros::Publisher _landing_vect_pub;
+        tf2_ros::TransformBroadcaster tf_broadcast;
 
         typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image,
                                                                 sensor_msgs::Image> MySyncPolicy;
@@ -298,7 +304,8 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
 
     _velocity_data_pub = _nh.advertise< geometry_msgs::Twist > ("/auto_control/twist", 1 );
     _img_elaboration_output_pub = _nh.advertise< sensor_msgs::Image > ("/pipe_line_extraction/elaboration/compressed", 1);
-    _landing_point_pub = _nh.advertise< geometry_msgs::Twist> ("/landing_point", 1);
+    _landing_point_pub = _nh.advertise< geometry_msgs::TwistStamped> ("/landing_point", 1);
+    _landing_vect_pub = _nh.advertise< geometry_msgs::PoseStamped> ("/landing_vector", 1);
     if( !_nh.getParam("rgb_image", _rgb_topic) ) {
         _rgb_topic =  "/camera/color/image_raw";
     }
@@ -443,7 +450,7 @@ bool polyfit( const std::vector<double> &t,
 }
 
 //Function implementing the pipe axis detection
-int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat, cv::Mat depth, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls,  cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img, geometry_msgs::Twist & lp ) {
+int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat, cv::Mat depth, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls,  cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img, geometry_msgs::TwistStamped & lp ,geometry_msgs::PoseStamped & landing_vect_pos) {
     
     double min;
     double max;
@@ -651,21 +658,66 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     if( x_SG.size() > 0 ) {
         reg->PrintBestFittingLine();
 
+        //first and last pipe points
+        circle(mask2, cv::Point(x_SG[0],y_SG[0]), 5, cv::Scalar(0,255,0), -1);
+        circle(mask2, cv::Point(x_SG[x_SG.size()-1],y_SG[y_SG.size()-1]), 5, cv::Scalar(0,255,0), -1);
+
         //landing point: the mean one
-        float mX = (x_SG[ x_SG.size()-1] + x_SG[0]) / 2.0;
-        float mY = (y_SG[ x_SG.size()-1] + y_SG[0]) / 2.0;
+        int mid_point_idx = int(x_SG.size()/2);
+        float mX = x_SG[mid_point_idx];
+        float mY = y_SG[mid_point_idx];
+         // middle pipe point
+        circle(mask2, cv::Point(mX, mY), 5, cv::Scalar(0,255,0), -1); 
+       
+        //compute landing vector
+        float pipe_percent = 0.2; //TODO shoud be a parameter
+        int land_vector_idx = int(pipe_percent*mid_point_idx);
+        Eigen::Vector3d A;
+        float xx = x_SG[ mid_point_idx - land_vector_idx ];
+        float yy = y_SG[ mid_point_idx - land_vector_idx ];
+        circle(mask2, cv::Point(xx, yy), 5, cv::Scalar(0,255,0), -1); //debug
+        float zz = depth.at<float>(yy, xx );
+        A[0] = (zz) * ( (xx - _cx) * _fx_inv );
+        A[1] = (zz) * ( (yy - _cy) * _fy_inv );
+        A[2] = zz;
 
-        circle(mask2, cv::Point(mX, mY), 5, cv::Scalar(0,255,0), -1);
+        Eigen::Vector3d B;
+        xx = x_SG[ mid_point_idx + land_vector_idx ];
+        yy = y_SG[ mid_point_idx + land_vector_idx ];
+        circle(mask2, cv::Point(xx, yy), 5, cv::Scalar(0,255,0), -1); //debug
+        zz = depth.at<float>(yy, xx );
+        B[0] = (zz) * ( (xx - _cx) * _fx_inv );
+        B[1] = (zz) * ( (yy - _cy) * _fy_inv );
+        B[2] = zz;
 
-        //circle(mask2, cv::Point(x_SG[0],y_SG[0]), 5, cv::Scalar(0,255,0), -1);
-        //circle(mask2, cv::Point(x_SG[x_SG.size()-1],y_SG[y_SG.size()-1]), 5, cv::Scalar(0,255,0), -1);
+        Eigen::Vector3d v_land = (A - B);
+        v_land = v_land/v_land.norm(); 
 
+        Eigen::Matrix3d R = utilities::versor2rotm(v_land );
+        Eigen::Vector4d landing_quat = utilities::rot2quat(R);
+        landing_quat = landing_quat/landing_quat.norm();
 
+        landing_vect_pos.pose.position.x = A[0];
+        landing_vect_pos.pose.position.y = A[1];
+        landing_vect_pos.pose.position.z = A[2];
+        landing_vect_pos.pose.orientation.w = landing_quat[0];
+        landing_vect_pos.pose.orientation.x = landing_quat[1];
+        landing_vect_pos.pose.orientation.y = landing_quat[2];
+        landing_vect_pos.pose.orientation.z = landing_quat[3];
+        
+       
+
+        // image plane approach (deprecated)
         float depth_cpxl = depth.at<float>(mY, mX ); //Distance from the pipe
         //depth_cpxl *= 100;
-        lp.linear.x = (depth_cpxl) * ( (mX - _cx) * _fx_inv );
-        lp.linear.y = (depth_cpxl) * ( (mY - _cy) * _fy_inv );
-        lp.linear.z = depth_cpxl;
+        lp.twist.linear.x = (depth_cpxl) * ( (mX - _cx) * _fx_inv );
+        lp.twist.linear.y = (depth_cpxl) * ( (mY - _cy) * _fy_inv );
+        lp.twist.linear.z = depth_cpxl; 
+        lp.twist.angular.z = atan(reg->coeff);  
+
+        //get 3d vector
+
+
 
         output_img = mask2;
         //imshow("skel", mask2);
@@ -677,8 +729,15 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     }
     else { 
         output_img = mask2;
-        lp.linear.x = lp.linear.y = lp.linear.z = -1;
-        lp.angular.x = lp.angular.y = lp.angular.z = -1;
+        lp.twist.linear.x = lp.twist.linear.y = lp.twist.linear.z = -1;
+        lp.twist.linear.x = lp.twist.linear.y = lp.twist.linear.z = -1;
+        landing_vect_pos.pose.position.x = 0;
+        landing_vect_pos.pose.position.y = 0;
+        landing_vect_pos.pose.position.z = 0;
+        landing_vect_pos.pose.orientation.w = 1;
+        landing_vect_pos.pose.orientation.x = 0;
+        landing_vect_pos.pose.orientation.y = 0;
+        landing_vect_pos.pose.orientation.z = 0;
     }
     return 1;
 }
@@ -777,8 +836,9 @@ void PIPE_INSPECTION::inspection()  {
         //imshow( "depth_normalized", _depth_normalized);
         //cv::waitKey(1);
         cv::Mat output_img;
-        geometry_msgs::Twist lp;
-        int error = pipeAxis_detect(_depth_normalized, depthfloat, depth, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img, lp);     
+        geometry_msgs::TwistStamped lp;
+        geometry_msgs::PoseStamped land_vector;
+        int error = pipeAxis_detect(_depth_normalized, depthfloat, depth, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img, lp, land_vector);     
         //
         /*
         if (error == -1) {
@@ -792,13 +852,35 @@ void PIPE_INSPECTION::inspection()  {
             _img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );      
             continue;
         }
-        _n_not_axis=0;
-
-        
+        _n_not_axis=0;       
         */
+
+        cout<< "ERROR STATUS = "<<error<<endl<<endl;
         cv_ptr.image = output_img;
         _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
+        //image plane approach (deprecated)
+         lp.header.stamp = ros::Time::now();
+        lp.header.frame_id = "camera_depth_optical_frame";
         _landing_point_pub.publish( lp );
+
+        // publish landing pose 
+        land_vector.header.stamp = ros::Time::now();
+        land_vector.header.frame_id = "camera_depth_optical_frame";
+        _landing_vect_pub.publish(land_vector);       
+        // publish also tf
+        geometry_msgs::TransformStamped transformStamped;
+        transformStamped.header.stamp = ros::Time::now();
+        transformStamped.header.frame_id = "camera_depth_optical_frame";
+        transformStamped.child_frame_id = "landing_frame";
+        transformStamped.transform.translation.x = utilities::isnan(land_vector.pose.position.x) ? 0 : land_vector.pose.position.x;
+        transformStamped.transform.translation.y = utilities::isnan(land_vector.pose.position.y) ? 0 : land_vector.pose.position.y;
+        transformStamped.transform.translation.z = utilities::isnan(land_vector.pose.position.z) ? 0 : land_vector.pose.position.z;
+        transformStamped.transform.rotation.x = utilities::isnan(land_vector.pose.orientation.x) ? 0 : land_vector.pose.orientation.x;
+        transformStamped.transform.rotation.y = utilities::isnan(land_vector.pose.orientation.y) ? 0 : land_vector.pose.orientation.y;
+        transformStamped.transform.rotation.z = utilities::isnan(land_vector.pose.orientation.z) ? 0 : land_vector.pose.orientation.z;
+        transformStamped.transform.rotation.w = utilities::isnan(land_vector.pose.orientation.w) ? 1 : land_vector.pose.orientation.w;
+
+        tf_broadcast.sendTransform(transformStamped);
         
         rate.sleep();
     }
