@@ -526,7 +526,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         else {
             circle(mask, cv::Point(centroids.at<double>(i, 0), centroids.at<double>(i, 1)), 4, cv::Scalar(0,255,0), -1);
         
-            float depth_pxl = depthfloat.at<float>(centroids.at<double>(i, 1), centroids.at<double>(i, 0) ); //Distance from the pipe
+            float depth_pxl = depthfloat.at<float>(centroids.at<double>(i, 1), centroids.at<double>(i, 0) )*_depth_scale_factor; //Distance from the pipe
             pc[0] = (depth_pxl) * ( (centroids.at<double>(i, 0) - _cx) * _fx_inv );
             pc[1] = (depth_pxl) * ( (centroids.at<double>(i, 1) - _cy) * _fy_inv );
             pc[2] = depth_pxl;
@@ -642,7 +642,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     for(int i=0; i<x_SG.size(); i++ ) {
 
 
-        float depth_pxl = depthfloat.at<float>( y_SG[i], x_SG[i] ); //Distance from the pipe
+        float depth_pxl = depthfloat.at<float>( y_SG[i], x_SG[i] )*_depth_scale_factor; //Distance from the pipe
         //pc[0] = (depth_pxl) * ( (centroids.at<double>(i, 0) - _cx) * _fx_inv );
 
         float x = ( (depth_pxl) * ( ( x_SG[i] - _cx) * _fx_inv ) );
