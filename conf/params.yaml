@@ -1,10 +1,12 @@
-#rgb_image: "/camera/color/image_raw"
-#depth_image: "/camera/aligned_depth_to_color/image_raw"
-#camera_info: "/camera/depth/camera_info"
+#rgb_image: "/d400/color/image_raw"
+#depth_image: "/d400/aligned_depth_to_color/image_raw"
+#camera_info: "/d400/depth/camera_info"
 
 rgb_image: "/depth_camera/depth_camera/image_raw"
 depth_image: "/depth_camera/depth/disparity"
 camera_info: "/depth_camera/depth_camera/camera_info"
+depth_optical_frame: "camera_depth_optical_frame"
+depth_scale_factor: 1.0 #0.001 real camera
 
 inspection_dist: 1.0   
 

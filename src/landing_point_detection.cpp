@@ -138,7 +138,7 @@ public:
  
     // Function that print the best
     // fitting line
-    void PrintBestFittingLine()
+    void PrintBestFittingLine(float & coeff_ )
     {
         if (coeff == 0 && constTerm == 0) {
             calculateCoefficient();
@@ -147,7 +147,8 @@ public:
         cout << "The best fitting line is y = "
              << coeff << "x + " << constTerm << endl;
 
-        cout << "Orientation: " << atan( coeff ) << endl;
+        coeff_ = atan(coeff);
+        cout << "Orientation: " << coeff_ << endl;
     }
  
     // Function to take input from the dataset
@@ -255,11 +256,13 @@ class PIPE_INSPECTION {
                                                                 sensor_msgs::Image> MySyncPolicy;
         
         float _inspection_distance = 0.8; 
-        float _depth_scale = 0.001; 
+        double _depth_scale_factor = 0.001; 
         
         std::string _rgb_topic; 
         std::string _depth_topic; 
-        std::string _camera_info_topic;         
+        std::string _camera_info_topic;     
+        std::string _depth_optical_frame;
+        
         ros::Publisher _velocity_data_pub;
 
         //ros::ServiceServer _inspection_task_srv;
@@ -307,15 +310,23 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     _landing_point_pub = _nh.advertise< geometry_msgs::TwistStamped> ("/landing_point", 1);
     _landing_vect_pub = _nh.advertise< geometry_msgs::PoseStamped> ("/landing_vector", 1);
     if( !_nh.getParam("rgb_image", _rgb_topic) ) {
-        _rgb_topic =  "/camera/color/image_raw";
+        _rgb_topic =  "/d400/color/image_raw";
     }
 
     if( !_nh.getParam("depth_image", _depth_topic) ) {
-        _depth_topic =  "/camera/depth/image_raw";
+        _depth_topic =  "/d400/depth/image_raw";
     }
     
     if( !_nh.getParam("camera_info", _camera_info_topic) ) {
-        _camera_info_topic =  "/camera/depth/camera_info";
+        _camera_info_topic =  "/d400/depth/camera_info";
+    }
+
+    if( !_nh.getParam("depth_optical_frame", _depth_optical_frame) ) {
+        _depth_optical_frame =  "d400_depth_optical_frame";
+    }
+
+    if( !_nh.getParam("depth_scale_factor", _depth_scale_factor) ) {
+        _depth_scale_factor =  0.001; // 1 in simulation (gazebo), 1000 for real RS camera
     }
         
     if( !_nh.getParam("kp_x", _kp_x) ) {
@@ -656,7 +667,8 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
 
 
     if( x_SG.size() > 0 ) {
-        reg->PrintBestFittingLine();
+        float coeff;
+        reg->PrintBestFittingLine(coeff);
 
         //first and last pipe points
         circle(mask2, cv::Point(x_SG[0],y_SG[0]), 5, cv::Scalar(0,255,0), -1);
@@ -676,7 +688,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         float xx = x_SG[ mid_point_idx - land_vector_idx ];
         float yy = y_SG[ mid_point_idx - land_vector_idx ];
         circle(mask2, cv::Point(xx, yy), 5, cv::Scalar(0,255,0), -1); //debug
-        float zz = depth.at<float>(yy, xx );
+        float zz = depth.at<float>(yy, xx )*_depth_scale_factor;
         A[0] = (zz) * ( (xx - _cx) * _fx_inv );
         A[1] = (zz) * ( (yy - _cy) * _fy_inv );
         A[2] = zz;
@@ -685,7 +697,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         xx = x_SG[ mid_point_idx + land_vector_idx ];
         yy = y_SG[ mid_point_idx + land_vector_idx ];
         circle(mask2, cv::Point(xx, yy), 5, cv::Scalar(0,255,0), -1); //debug
-        zz = depth.at<float>(yy, xx );
+        zz = depth.at<float>(yy, xx )*_depth_scale_factor;
         B[0] = (zz) * ( (xx - _cx) * _fx_inv );
         B[1] = (zz) * ( (yy - _cy) * _fy_inv );
         B[2] = zz;
@@ -708,7 +720,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
        
 
         // image plane approach (deprecated)
-        float depth_cpxl = depth.at<float>(mY, mX ); //Distance from the pipe
+        float depth_cpxl = depth.at<float>(mY, mX )*_depth_scale_factor; //Distance from the pipe
         //depth_cpxl *= 100;
         lp.twist.linear.x = (depth_cpxl) * ( (mX - _cx) * _fx_inv );
         lp.twist.linear.y = (depth_cpxl) * ( (mY - _cy) * _fy_inv );
@@ -860,17 +872,17 @@ void PIPE_INSPECTION::inspection()  {
         _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
         //image plane approach (deprecated)
          lp.header.stamp = ros::Time::now();
-        lp.header.frame_id = "camera_depth_optical_frame";
+        lp.header.frame_id = _depth_optical_frame;
         _landing_point_pub.publish( lp );
 
         // publish landing pose 
         land_vector.header.stamp = ros::Time::now();
-        land_vector.header.frame_id = "camera_depth_optical_frame";
+        land_vector.header.frame_id = _depth_optical_frame;
         _landing_vect_pub.publish(land_vector);       
         // publish also tf
         geometry_msgs::TransformStamped transformStamped;
         transformStamped.header.stamp = ros::Time::now();
-        transformStamped.header.frame_id = "camera_depth_optical_frame";
+        transformStamped.header.frame_id = _depth_optical_frame;
         transformStamped.child_frame_id = "landing_frame";
         transformStamped.transform.translation.x = utilities::isnan(land_vector.pose.position.x) ? 0 : land_vector.pose.position.x;
         transformStamped.transform.translation.y = utilities::isnan(land_vector.pose.position.y) ? 0 : land_vector.pose.position.y;
