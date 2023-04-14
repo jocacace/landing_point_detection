@@ -669,7 +669,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     if( x_SG.size() > 0 ) {
         float coeff;
         reg->PrintBestFittingLine(coeff);
-
+        cout<<" n of point: "<<x_SG.size()<<endl;
         //first and last pipe points
         circle(mask2, cv::Point(x_SG[0],y_SG[0]), 5, cv::Scalar(0,255,0), -1);
         circle(mask2, cv::Point(x_SG[x_SG.size()-1],y_SG[y_SG.size()-1]), 5, cv::Scalar(0,255,0), -1);
@@ -702,7 +702,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         B[1] = (zz) * ( (yy - _cy) * _fy_inv );
         B[2] = zz;
 
-        Eigen::Vector3d v_land = (A - B);
+        Eigen::Vector3d v_land = (B-A);
         v_land = v_land/v_land.norm(); 
 
         Eigen::Matrix3d R = utilities::versor2rotm(v_land );
