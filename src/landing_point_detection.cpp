@@ -19,6 +19,8 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <Eigen/Dense>
+#include <eigen3/Eigen/Dense>
+#include <eigen3/Eigen/SVD>
 #include <mutex>
 #include "geometry_msgs/Twist.h"
 #include <geometry_msgs/PoseStamped.h>
@@ -29,205 +31,77 @@ using namespace Eigen;
 
 std::mutex img_mutex;
 
-bool FROM_SIMU = true;
+// ****  REGRESSOR CLASS
+class regressor3d {
 
+    private:    
+        Eigen::MatrixXd _X;
+        Eigen::Vector3d _y; //COG
+        Eigen::Matrix3d _cov;
+        Eigen::Vector3d _versor;
+        Eigen::JacobiSVD<Eigen::Matrix3d> _svd;
+        int _n;        
+        int _row_fill_i;
 
-class regression {
-   
-   
+    public:
+        regressor3d();
+        void resize (int npoints);
+        void fill_row(double &x,double &y, double &z);
+        void compute_pca(void);
+        void print_X(void){cout<<_X<<endl;}
+        void print_cov(void){cout<<_cov<<endl;}
+        Eigen::Vector3d get_COG(void){return _y;};
+        Eigen::Vector3d get_versor(void){return _versor;};
  
-public:
-    // Store the coefficient/slope in
-    // the best fitting line
-    float coeff;
- 
-    // Store the constant term in
-    // the best fitting line
-    float constTerm;
- 
-    // Contains sum of product of
-    // all (i-th x) and (i-th y)
-    float sum_xy;
- 
-    // Contains sum of all (i-th x)
-    float sum_x;
- 
-    // Contains sum of all (i-th y)
-    float sum_y;
- 
-    // Contains sum of square of
-    // all (i-th x)
-    float sum_x_square;
- 
-    // Contains sum of square of
-    // all (i-th y)
-    float sum_y_square;
-
-    // Constructor to provide the default
-    // values to all the terms in the
-    // object of class regression
-    // Dynamic array which is going
-    // to contain all (i-th x)
-    vector<float> x;
- 
-    // Dynamic array which is going
-    // to contain all (i-th y)
-    vector<float> y;
- 
-
-    regression()
-    {
-        coeff = 0;
-        constTerm = 0;
-        sum_y = 0;
-        sum_y_square = 0;
-        sum_x_square = 0;
-        sum_x = 0;
-        sum_xy = 0;
-    }
- 
-    // Function that calculate the coefficient/
-    // slope of the best fitting line
-    void calculateCoefficient()
-    {
-        float N = x.size();
-        float numerator
-            = (N * sum_xy - sum_x * sum_y);
-        float denominator
-            = (N * sum_x_square - sum_x * sum_x);
-        coeff = numerator / denominator;
-    }
- 
-    // Member function that will calculate
-    // the constant term of the best
-    // fitting line
-    void calculateConstantTerm()
-    {
-        float N = x.size();
-        float numerator
-            = (sum_y * sum_x_square - sum_x * sum_xy);
-        float denominator
-            = (N * sum_x_square - sum_x * sum_x);
-        constTerm = numerator / denominator;
-    }
- 
-    // Function that return the number
-    // of entries (xi, yi) in the data set
-    int sizeOfData()
-    {
-        return x.size();
-    }
- 
-    // Function that return the coefficient/
-    // slope of the best fitting line
-    float coefficient()
-    {
-        if (coeff == 0)
-            calculateCoefficient();
-        return coeff;
-    }
- 
-    // Function that return the constant
-    // term of the best fitting line
-    float constant()
-    {
-        if (constTerm == 0)
-            calculateConstantTerm();
-        return constTerm;
-    }
- 
-    // Function that print the best
-    // fitting line
-    void PrintBestFittingLine(float & coeff_ )
-    {
-        if (coeff == 0 && constTerm == 0) {
-            calculateCoefficient();
-            calculateConstantTerm();
-        }
-        cout << "The best fitting line is y = "
-             << coeff << "x + " << constTerm << endl;
-
-        coeff_ = atan(coeff);
-        cout << "Orientation: " << coeff_ << endl;
-    }
- 
-    // Function to take input from the dataset
-    void takeInput(int n)
-    {
-        for (int i = 0; i < n; i++) {
-            // In a csv file all the values of
-            // xi and yi are separated by commas
-            char comma;
-            float xi;
-            float yi;
-            cin >> xi >> comma >> yi;
-            sum_xy += xi * yi;
-            sum_x += xi;
-            sum_y += yi;
-            sum_x_square += xi * xi;
-            sum_y_square += yi * yi;
-            x.push_back(xi);
-            y.push_back(yi);
-        }
-    }
- 
-    // Function to show the data set
-    void showData()
-    {
-        for (int i = 0; i < 62; i++) {
-            printf("_");
-        }
-        printf("\n\n");
-        printf("|%15s%5s %15s%5s%20s\n",
-               "X", "", "Y", "", "|");
- 
-        for (int i = 0; i < x.size(); i++) {
-            printf("|%20f %20f%20s\n",
-                   x[i], y[i], "|");
-        }
- 
-        for (int i = 0; i < 62; i++) {
-            printf("_");
-        }
-        printf("\n");
-    }
- 
-    // Function to predict the value
-    // corresponding to some input
-    float predict(float x)
-    {
-        return coeff * x + constTerm;
-    }
- 
-    // Function that returns overall
-    // sum of square of errors
-    float errorSquare()
-    {
-        float ans = 0;
-        for (int i = 0;
-             i < x.size(); i++) {
-            ans += ((predict(x[i]) - y[i])
-                    * (predict(x[i]) - y[i]));
-        }
-        return ans;
-    }
- 
-    // Functions that return the error
-    // i.e the difference between the
-    // actual value and value predicted
-    // by our model
-    float errorIn(float num)
-    {
-        for (int i = 0;
-             i < x.size(); i++) {
-            if (num == x[i]) {
-                return (y[i] - predict(x[i]));
-            }
-        }
-        return 0;
-    }
 };
 
+regressor3d::regressor3d(){
+    _n= 0;
+    _row_fill_i =0;
+    _cov = Eigen::Matrix3d::Zero();
+    _y = Eigen::Vector3d::Zero();
+    _versor = Eigen::Vector3d::Zero();
+}
+
+void regressor3d::resize(int npoints){
+    _n = npoints;
+    _X.resize(_n,3); 
+    _X = Eigen::MatrixXd::Zero(_n,3);
+    _row_fill_i = 0;  
+    _cov = Eigen::Matrix3d::Zero(); 
+    _y = Eigen::Vector3d::Zero();
+    _versor = Eigen::Vector3d::Zero();
+}
+
+void regressor3d::fill_row(double &x,double &y, double &z){
+    if(_row_fill_i <_n){
+        _X.block(_row_fill_i,0,1,3) <<x,y,z;
+        _row_fill_i++;
+    }
+}
+
+void regressor3d::compute_pca(void)
+{   
+    _n = _row_fill_i; //just if matrix is filled with less elements than resized
+    _X.resize(_n,3); 
+    _y = _X.colwise().sum()/double(_n);
+    //cout<<"sum is "<<_y<<endl; //
+    _X = _X.rowwise() -_y.transpose();
+    //cout<<_X<<endl; //
+    _cov = (1.0f/double(_n))*(_X.transpose()*_X);
+    //cout<<"covariance \n"<<_cov<<endl;
+    //Eigen::JacobiSVD<Matrix3d, ComputeThinU | ComputeThinV> svd(_cov);
+    //Eigen::JacobiSVD<Matrix3d, NoQRPreconditioner | ComputeThinU | ComputeThinV > svd(_cov);
+    //Eigen::JacobiSVD<Eigen::Matrix3d> _svd(_cov,Eigen::ComputeFullU); // THIS IS THE ONE THAT WORK
+    //cout << "Its singular values are:" << endl << svd.singularValues().transpose() << endl;
+    //cout << "Its left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+    _svd.compute(_cov,Eigen::ComputeFullU);
+    _versor = _svd.matrixU().block(0,0,3,1); //first col;
+    _versor = _versor /_versor.norm();
+    //cout<<"versor "<< _versor<<endl; //
+}
+
+// **** END REGRESSOR CLASS
 
 class PIPE_INSPECTION {
     public:
@@ -250,29 +124,30 @@ class PIPE_INSPECTION {
         ros::Publisher _img_elaboration_output_pub;
         ros::Publisher _landing_point_pub;
         ros::Publisher _landing_vect_pub;
+        //ros::Publisher _velocity_data_pub;
+        //ros::ServiceServer _inspection_task_srv;
         tf2_ros::TransformBroadcaster tf_broadcast;
+        tf::TransformListener tf_listener;
 
-        typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image,
-                                                                sensor_msgs::Image> MySyncPolicy;
+        typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> MySyncPolicy;
         
         float _inspection_distance = 0.8; 
         double _depth_scale_factor = 0.001; 
-        
+        double _depth_cutoff = 0.35;
+        bool _land_on_nearest_point = true;
         std::string _rgb_topic; 
         std::string _depth_topic; 
         std::string _camera_info_topic;     
         std::string _depth_optical_frame;
-        
-        ros::Publisher _velocity_data_pub;
 
-        //ros::ServiceServer _inspection_task_srv;
+        Eigen::Vector3d _pb_c;
+        Eigen::Vector3d _e1_b_c;
+        Eigen::Matrix3d _R_b_c;
 
-        //Subscription info
         cv::Mat _rgb;
         cv::Mat _depth;
-
-        uint _n_pipe = 0;
-        int _change_dir = 0;
+        //uint _n_pipe = 0;
+        //int _change_dir = 0;
         int _n_not_axis = 0;
         cv::Mat _depth_normalized;
 
@@ -280,10 +155,6 @@ class PIPE_INSPECTION {
         bool _start_tracking = false;
         bool _first_img = false;
         cv::Mat *_cam_cameraMatrix, *_cam_distCo, *_cam_R, *_cam_P;
-
-        double _kp_x, _kp_y, _kp_z;
-        double _kd_x, _kd_y, _kd_z;
-        double _ki_x, _ki_y, _ki_z;
 
         bool _inspecting = false; //COMPROBAR
         bool _preempt_inspection;
@@ -294,7 +165,7 @@ class PIPE_INSPECTION {
         float _fy_inv;
 
         vector< Eigen::Vector3d > _centroids;
-        regression *reg;
+        regressor3d regr;
 
         
 };
@@ -303,9 +174,9 @@ class PIPE_INSPECTION {
 
 PIPE_INSPECTION::PIPE_INSPECTION() {
 
-    reg = new regression();
+    //reg = new regression();
 
-    _velocity_data_pub = _nh.advertise< geometry_msgs::Twist > ("/auto_control/twist", 1 );
+    //_velocity_data_pub = _nh.advertise< geometry_msgs::Twist > ("/auto_control/twist", 1 );
     _img_elaboration_output_pub = _nh.advertise< sensor_msgs::Image > ("/pipe_line_extraction/elaboration/compressed", 1);
     _landing_point_pub = _nh.advertise< geometry_msgs::TwistStamped> ("/landing_point", 1);
     _landing_vect_pub = _nh.advertise< geometry_msgs::PoseStamped> ("/landing_vector", 1);
@@ -328,39 +199,14 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     if( !_nh.getParam("depth_scale_factor", _depth_scale_factor) ) {
         _depth_scale_factor =  0.001; // 1 in simulation (gazebo), 1000 for real RS camera
     }
-        
-    if( !_nh.getParam("kp_x", _kp_x) ) {
-        _kp_x =  0.0;
-    }
-    if( !_nh.getParam("kp_y", _kp_y) ) {
-        _kp_y =  0.0;
-    }
-    if( !_nh.getParam("kp_z", _kp_z) ) {
-        _kp_z =  0.0;
+
+    if( !_nh.getParam("depth_cutoff", _depth_cutoff) ) {
+        _depth_cutoff =  0.35; // not considering pipe point too near camera to avoid "lambda like" skeleton at the end of fov.
     }
 
-
-    if( !_nh.getParam("kd_x", _kd_x) ) {
-        _kd_x =  0.0;
+    if( !_nh.getParam("land_on_nearest_point", _land_on_nearest_point) ) {
+        _land_on_nearest_point =  true; // if is true land on nearest point, else land on COM of the detected pipe
     }
-    if( !_nh.getParam("kd_y", _kd_y) ) {
-        _kd_y =  0.0;
-    }
-    if( !_nh.getParam("kd_z", _kd_z) ) {
-        _kd_z =  0.0;
-    }
-
-
-    if( !_nh.getParam("ki_x", _ki_x) ) {
-        _ki_x =  0.0;
-    }
-    if( !_nh.getParam("ki_y", _ki_y) ) {
-        _ki_y =  0.0;
-    }
-    if( !_nh.getParam("ki_z", _ki_z) ) {
-        _ki_z =  0.0;
-    }
-
 
     //Get camera info---------------------------------------------------------------------------------------------
     _cam_cameraMatrix = new cv::Mat(3, 3, CV_64FC1);
@@ -372,8 +218,6 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     sharedCamera_info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(_camera_info_topic,_nh);
     if(sharedCamera_info != NULL){
         camera_info = *sharedCamera_info;
-
-
         //---K
         for(int i=0; i<3;i++) {
             for(int j=0; j<3; j++) {
@@ -408,11 +252,26 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     _fx_inv = 1.0 / _cam_cameraMatrix->at<double>(0,0);
     _fy_inv = 1.0 / _cam_cameraMatrix->at<double>(1,1);
    
+    //Get base link pose in camera frame ------------------------------------------------------
+    _pb_c<<0.017, 0.089, -0.117; // default in case of tf failure
+    _e1_b_c<<0.0, -0.939443, 0.342706;
+    tf::StampedTransform tf_cam_base;
+    tf::Quaternion q;
+    try{
+        tf_listener.lookupTransform(_depth_optical_frame, "/base_link", ros::Time(0), tf_cam_base);
+        _pb_c<<tf_cam_base.getOrigin().x(),tf_cam_base.getOrigin().y(),tf_cam_base.getOrigin().z();
+        q = tf_cam_base.getRotation();
+        _R_b_c = utilities::QuatToMat(Eigen::Vector4d(q.getW(),q.getX(),q.getY(),q.getZ()));
+        _e1_b_c = _R_b_c*Eigen::Vector3d(1.0,0.0,0.0);
+    }
+    catch (tf::TransformException ex){ 
+        ROS_ERROR("%s",ex.what());
+        ros::Duration(1.0).sleep();
+    }
+
     _start_tracking_sub = _nh.subscribe("/joy_control/start_tracking", 1, &PIPE_INSPECTION::start_tracking_cb, this);
     _rgb_sub.subscribe(_nh, _rgb_topic, 1);
     _depth_sub.subscribe(_nh, _depth_topic, 1);
-
-
     message_filters::Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), _rgb_sub, _depth_sub);
     sync.registerCallback(boost::bind(&PIPE_INSPECTION::img_cb, this, _1, _2)); //cb_pid // cb3
 
@@ -468,15 +327,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     int i = 0;
 
     _centroids.clear();
-    reg->x.clear();
-    reg->y.clear();
-    reg->coeff = 0;
-    reg->constTerm = 0;
-    reg->sum_y = 0;
-    reg->sum_y_square = 0;
-    reg->sum_x_square = 0;
-    reg->sum_x = 0;
-    reg->sum_xy = 0;
+
 
     for(int r=0;r<depth_normalized.rows;r++) {
         for(int c=0; c<depth_normalized.cols;c++) {
@@ -562,8 +413,8 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     }
     circle(mask, cv::Point(centroids.at<double>(id_big_cluster, 0), centroids.at<double>(id_big_cluster, 1)), 12, cv::Scalar(0,255,0), -1);
     
-    //imshow("centroids", mask);
-    //cv::waitKey(1);
+    // imshow("centroids", mask);
+    // cv::waitKey(1);
     
 
     for(int r = 0; r < dst.rows; ++r) {
@@ -573,8 +424,8 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         }
     }
 
-    //imshow("dst", dst);
-    //cv::waitKey(1); 
+    // imshow("dst", dst);
+    // cv::waitKey(1); 
 
 
     mask = dst.clone();
@@ -631,113 +482,83 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
 
                 std::pair<int, int> punto(c, r);
                 puntos.push_back(cv::Point(c,r));
-                x_SG.push_back((double)c);
-                y_SG.push_back((double)r);
+                double z = depth.at<float>( (double)r, (double)c )*_depth_scale_factor; //Distance from the pipe
+                if(z > _depth_cutoff){  // not considering pipe point too near camera to avoid "lambda like" skeleton at the end of fov.
+                    x_SG.push_back((double)c);
+                    y_SG.push_back((double)r);
+                }
 
          
             }
         }
     }
 
+    /// *** line regression
+    cout<<"Npoints: "<<x_SG.size()<<endl;
+    regr.resize(x_SG.size());
     for(int i=0; i<x_SG.size(); i++ ) {
+        //pc[0] = (z) * ( (centroids.at<double>(i, 0) - _cx) * _fx_inv );
+        //double z = depthfloat.at<float>( y_SG[i], x_SG[i] )*_depth_scale_factor; //Distance from the pipe
+        double z = depth.at<float>( y_SG[i], x_SG[i] )*_depth_scale_factor; //Distance from the pipe
+        double x = ( (z) * ( ( x_SG[i] - _cx) * _fx_inv ) );
+        double y = ( (z) * ( ( y_SG[i] - _cy) * _fy_inv ) );
+        regr.fill_row(x,y,z);
 
-
-        float depth_pxl = depthfloat.at<float>( y_SG[i], x_SG[i] )*_depth_scale_factor; //Distance from the pipe
-        //pc[0] = (depth_pxl) * ( (centroids.at<double>(i, 0) - _cx) * _fx_inv );
-
-        float x = ( (depth_pxl) * ( ( x_SG[i] - _cx) * _fx_inv ) );
-        float y = ( (depth_pxl) * ( ( y_SG[i] - _cy) * _fy_inv ) );
-
-
-        reg->sum_xy += x*y; //0.0; //xi * yi;
-        reg->sum_x += x; //xi;
-        reg->sum_y += y; //yi;
-        reg->sum_x_square += x*x; //xi * xi;
-        reg->sum_y_square += y*y; //yi * yi;
-    
-        reg->x.push_back( x );        
-        reg->y.push_back( y );
-
-    
-        circle(mask2, cv::Point(x_SG[i], y_SG[i]), 1, cv::Scalar(255,0,0), -1);
-
-
+        if(z >= _depth_cutoff){
+            circle(mask2, cv::Point(x_SG[i], y_SG[i]), 1, cv::Scalar(255,0,0), -1); // blue line: pipe skeleton
+            
+        }
+        else{
+            circle(mask2, cv::Point(x_SG[i], y_SG[i]), 1, cv::Scalar(0,0,255), -1); // red line: pipe skeleton
+        }
     }
 
 
 
-    if( x_SG.size() > 0 ) {
-        float coeff;
-        reg->PrintBestFittingLine(coeff);
+    if( x_SG.size() > 2 ) { //at least two point for a line
 
         //first and last pipe points
         circle(mask2, cv::Point(x_SG[0],y_SG[0]), 5, cv::Scalar(0,255,0), -1);
         circle(mask2, cv::Point(x_SG[x_SG.size()-1],y_SG[y_SG.size()-1]), 5, cv::Scalar(0,255,0), -1);
 
-        //landing point: the mean one
-        int mid_point_idx = int(x_SG.size()/2);
-        float mX = x_SG[mid_point_idx];
-        float mY = y_SG[mid_point_idx];
-         // middle pipe point
-        circle(mask2, cv::Point(mX, mY), 5, cv::Scalar(0,255,0), -1); 
-       
-        //compute landing vector
-        float pipe_percent = 0.2; //TODO shoud be a parameter
-        int land_vector_idx = int(pipe_percent*mid_point_idx);
-        Eigen::Vector3d A;
-        float xx = x_SG[ mid_point_idx - land_vector_idx ];
-        float yy = y_SG[ mid_point_idx - land_vector_idx ];
-        circle(mask2, cv::Point(xx, yy), 5, cv::Scalar(0,255,0), -1); //debug
-        float zz = depth.at<float>(yy, xx )*_depth_scale_factor;
-        A[0] = (zz) * ( (xx - _cx) * _fx_inv );
-        A[1] = (zz) * ( (yy - _cy) * _fy_inv );
-        A[2] = zz;
-
-        Eigen::Vector3d B;
-        xx = x_SG[ mid_point_idx + land_vector_idx ];
-        yy = y_SG[ mid_point_idx + land_vector_idx ];
-        circle(mask2, cv::Point(xx, yy), 5, cv::Scalar(0,255,0), -1); //debug
-        zz = depth.at<float>(yy, xx )*_depth_scale_factor;
-        B[0] = (zz) * ( (xx - _cx) * _fx_inv );
-        B[1] = (zz) * ( (yy - _cy) * _fy_inv );
-        B[2] = zz;
-
-        Eigen::Vector3d v_land = (A - B);
-        v_land = v_land/v_land.norm(); 
+        regr.compute_pca();
+        Eigen::Vector3d p_cog = regr.get_COG();
+        Eigen::Vector3d v_land = regr.get_versor();
+        Eigen::Vector3d p_land;
+        
+        /* choose versor signum according to drone heading*/
+        //cout<< "body_x in cam frame: "<<_e1_b_c<<endl;
+        //cout<< "scalar prod result: "<<_e1_b_c.dot(v_land)<<endl;
+        if(_e1_b_c.dot(v_land)<0.0){
+            v_land = -v_land;
+        }
+        
+        cout<<"COM: "<<p_cog.transpose()<<endl;
+        cout<<"versor: "<<v_land.transpose()<<endl;
 
         Eigen::Matrix3d R = utilities::versor2rotm(v_land );
         Eigen::Vector4d landing_quat = utilities::rot2quat(R);
         landing_quat = landing_quat/landing_quat.norm();
 
-        landing_vect_pos.pose.position.x = A[0];
-        landing_vect_pos.pose.position.y = A[1];
-        landing_vect_pos.pose.position.z = A[2];
+        if(_land_on_nearest_point){
+            p_land = (v_land.dot(_pb_c -p_cog)/v_land.dot(v_land))*v_land +p_cog;
+        }
+        else{
+            p_land =p_cog;
+        }
+
+        landing_vect_pos.pose.position.x = p_land[0];
+        landing_vect_pos.pose.position.y = p_land[1];
+        landing_vect_pos.pose.position.z = p_land[2];
         landing_vect_pos.pose.orientation.w = landing_quat[0];
         landing_vect_pos.pose.orientation.x = landing_quat[1];
         landing_vect_pos.pose.orientation.y = landing_quat[2];
         landing_vect_pos.pose.orientation.z = landing_quat[3];
-        
-       
-
-        // image plane approach (deprecated)
-        float depth_cpxl = depth.at<float>(mY, mX )*_depth_scale_factor; //Distance from the pipe
-        //depth_cpxl *= 100;
-        lp.twist.linear.x = (depth_cpxl) * ( (mX - _cx) * _fx_inv );
-        lp.twist.linear.y = (depth_cpxl) * ( (mY - _cy) * _fy_inv );
-        lp.twist.linear.z = depth_cpxl; 
-        lp.twist.angular.z = atan(reg->coeff);  
-
-        //get 3d vector
-
-
 
         output_img = mask2;
         //imshow("skel", mask2);
         //cv::waitKey(1);
-
-        //return: landing point poistion: x,y,z
-        //        rotation
-
+        return 1;
     }
     else { 
         output_img = mask2;
@@ -750,8 +571,9 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         landing_vect_pos.pose.orientation.x = 0;
         landing_vect_pos.pose.orientation.y = 0;
         landing_vect_pos.pose.orientation.z = 0;
+        return -1;
     }
-    return 1;
+    
 }
 
 //Work on this function
@@ -797,23 +619,6 @@ void PIPE_INSPECTION::inspection()  {
 
     geometry_msgs::Twist cmd_vel;
 
-    float cx = _cam_cameraMatrix->at<double>(0,2);
-    float cy = _cam_cameraMatrix->at<double>(1,2);
-    float fx_inv = 1.0 / _cam_cameraMatrix->at<double>(0,0);
-    float fy_inv = 1.0 / _cam_cameraMatrix->at<double>(1,1);
-    double dir[3];
-
-    Eigen::Vector3d e_p;
-    Eigen::Vector3d e_pp;
-    Eigen::Vector3d de_p;
-    Eigen::Vector3d ie_p;
-    Eigen::Vector3d ctrl_vel;
-
-    e_p << 0.0, 0.0, 0.0;
-    e_pp << 0.0, 0.0, 0.0;
-    de_p << 0.0, 0.0, 0.0;
-    ie_p << 0.0, 0.0, 0.0;
-
     cv::Mat depthfloat;
     cv_ptr.encoding = "bgr8";
 
@@ -831,6 +636,7 @@ void PIPE_INSPECTION::inspection()  {
         img_mutex.lock();
         if( _depth.empty() || _rgb.empty() ) {
             img_mutex.unlock(); 
+            ROS_WARN("Empty image");
             continue;
         }      
         _depth.copyTo(depth);
@@ -850,50 +656,54 @@ void PIPE_INSPECTION::inspection()  {
         cv::Mat output_img;
         geometry_msgs::TwistStamped lp;
         geometry_msgs::PoseStamped land_vector;
-        int error = pipeAxis_detect(_depth_normalized, depthfloat, depth, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img, lp, land_vector);     
+        int retval = pipeAxis_detect(_depth_normalized, depthfloat, depth, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img, lp, land_vector);     
         //
-        /*
-        if (error == -1) {
-           if (_start_tracking) ROS_WARN("Not axis detected");
-            cv_ptr.image = mask2;
-            _img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );
+        
+        if (retval == -1) {
+           //if (_start_tracking) 
+           ROS_WARN("Not axis detected");
+            // cv_ptr.image = mask2;
+            // _img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );
 
             _n_not_axis++;
-            cv::Mat mask2 = rgb.clone();
-            cv_ptr.image = mask2;
-            _img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );      
-            continue;
+            // cv::Mat mask2 = rgb.clone();
+            // cv_ptr.image = mask2;
+            // _img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );      
+            //continue;
         }
         _n_not_axis=0;       
-        */
-
-        cout<< "ERROR STATUS = "<<error<<endl<<endl;
-        cv_ptr.image = output_img;
-        _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
-        //image plane approach (deprecated)
-         lp.header.stamp = ros::Time::now();
-        lp.header.frame_id = _depth_optical_frame;
-        _landing_point_pub.publish( lp );
-
-        // publish landing pose 
-        land_vector.header.stamp = ros::Time::now();
-        land_vector.header.frame_id = _depth_optical_frame;
-        _landing_vect_pub.publish(land_vector);       
-        // publish also tf
-        geometry_msgs::TransformStamped transformStamped;
-        transformStamped.header.stamp = ros::Time::now();
-        transformStamped.header.frame_id = _depth_optical_frame;
-        transformStamped.child_frame_id = "landing_frame";
-        transformStamped.transform.translation.x = utilities::isnan(land_vector.pose.position.x) ? 0 : land_vector.pose.position.x;
-        transformStamped.transform.translation.y = utilities::isnan(land_vector.pose.position.y) ? 0 : land_vector.pose.position.y;
-        transformStamped.transform.translation.z = utilities::isnan(land_vector.pose.position.z) ? 0 : land_vector.pose.position.z;
-        transformStamped.transform.rotation.x = utilities::isnan(land_vector.pose.orientation.x) ? 0 : land_vector.pose.orientation.x;
-        transformStamped.transform.rotation.y = utilities::isnan(land_vector.pose.orientation.y) ? 0 : land_vector.pose.orientation.y;
-        transformStamped.transform.rotation.z = utilities::isnan(land_vector.pose.orientation.z) ? 0 : land_vector.pose.orientation.z;
-        transformStamped.transform.rotation.w = utilities::isnan(land_vector.pose.orientation.w) ? 1 : land_vector.pose.orientation.w;
-
-        tf_broadcast.sendTransform(transformStamped);
         
+
+        cout<< "ERROR STATUS = "<<retval<<endl<<endl;
+        
+
+        if(retval){
+            cv_ptr.image = output_img;
+            _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
+            //image plane approach (deprecated)
+            lp.header.stamp = ros::Time::now();
+            lp.header.frame_id = _depth_optical_frame;
+            _landing_point_pub.publish( lp );
+
+            // publish landing pose 
+            land_vector.header.stamp = ros::Time::now();
+            land_vector.header.frame_id = _depth_optical_frame;
+            _landing_vect_pub.publish(land_vector);       
+            // publish also tf
+            geometry_msgs::TransformStamped transformStamped;
+            transformStamped.header.stamp = ros::Time::now();
+            transformStamped.header.frame_id = _depth_optical_frame;
+            transformStamped.child_frame_id = "landing_frame";
+            transformStamped.transform.translation.x = utilities::isnan(land_vector.pose.position.x) ? 0 : land_vector.pose.position.x;
+            transformStamped.transform.translation.y = utilities::isnan(land_vector.pose.position.y) ? 0 : land_vector.pose.position.y;
+            transformStamped.transform.translation.z = utilities::isnan(land_vector.pose.position.z) ? 0 : land_vector.pose.position.z;
+            transformStamped.transform.rotation.x = utilities::isnan(land_vector.pose.orientation.x) ? 0 : land_vector.pose.orientation.x;
+            transformStamped.transform.rotation.y = utilities::isnan(land_vector.pose.orientation.y) ? 0 : land_vector.pose.orientation.y;
+            transformStamped.transform.rotation.z = utilities::isnan(land_vector.pose.orientation.z) ? 0 : land_vector.pose.orientation.z;
+            transformStamped.transform.rotation.w = utilities::isnan(land_vector.pose.orientation.w) ? 1 : land_vector.pose.orientation.w;
+
+            tf_broadcast.sendTransform(transformStamped);
+        }
         rate.sleep();
     }
 }
