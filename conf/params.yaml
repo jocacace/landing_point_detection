@@ -1,16 +1,16 @@
 ### real drone
-# rgb_image: "/d400/color/image_raw"
-# depth_image: "/d400/aligned_depth_to_color/image_raw"
-# camera_info: "/d400/aligned_depth_to_color/camera_info"
-# depth_optical_frame: "d400_depth_optical_frame"
-# depth_scale_factor: 0.001 #real camera
+rgb_image: "/d400/color/image_raw"
+depth_image: "/d400/aligned_depth_to_color/image_raw"
+camera_info: "/d400/aligned_depth_to_color/camera_info"
+depth_optical_frame: "d400_depth_optical_frame"
+depth_scale_factor: 0.001 #real camera
 
 ### simulation gazebo
-rgb_image: "/depth_camera/depth_camera/image_raw"
-depth_image: "/depth_camera/depth/disparity"
-camera_info: "/depth_camera/depth_camera/camera_info"
-depth_optical_frame: "camera_depth_optical_frame"
-depth_scale_factor: 1.0 #sim
+# rgb_image: "/depth_camera/depth_camera/image_raw"
+# depth_image: "/depth_camera/depth/disparity"
+# camera_info: "/depth_camera/depth_camera/camera_info"
+# depth_optical_frame: "camera_depth_optical_frame"
+# depth_scale_factor: 1.0 #sim
 
-depth_cutoff: 0.33
+depth_cutoff: 0.3
 land_on_nearest_point: true

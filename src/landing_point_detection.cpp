@@ -257,18 +257,29 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     _e1_b_c<<0.0, -0.939443, 0.342706;
     tf::StampedTransform tf_cam_base;
     tf::Quaternion q;
-    try{
-        tf_listener.lookupTransform(_depth_optical_frame, "/base_link", ros::Time(0), tf_cam_base);
-        _pb_c<<tf_cam_base.getOrigin().x(),tf_cam_base.getOrigin().y(),tf_cam_base.getOrigin().z();
-        q = tf_cam_base.getRotation();
-        _R_b_c = utilities::QuatToMat(Eigen::Vector4d(q.getW(),q.getX(),q.getY(),q.getZ()));
-        _e1_b_c = _R_b_c*Eigen::Vector3d(1.0,0.0,0.0);
-    }
-    catch (tf::TransformException ex){ 
-        ROS_ERROR("%s",ex.what());
-        ros::Duration(1.0).sleep();
+    bool found = false;
+    int count = 0;
+    while( !found && count++ < 10 ) {
+
+        try{
+            tf_listener.lookupTransform(_depth_optical_frame, "/base_link", ros::Time(0), tf_cam_base);
+            _pb_c<<tf_cam_base.getOrigin().x(),tf_cam_base.getOrigin().y(),tf_cam_base.getOrigin().z();
+            q = tf_cam_base.getRotation();
+            _R_b_c = utilities::QuatToMat(Eigen::Vector4d(q.getW(),q.getX(),q.getY(),q.getZ()));
+            _e1_b_c = _R_b_c*Eigen::Vector3d(1.0,0.0,0.0);
+            found = true;
+        }
+        catch (tf::TransformException ex){ 
+            ROS_ERROR("%s",ex.what());
+            ros::Duration(1.0).sleep();
+        }
+        
     }
 
+    if( !found ) {
+        ROS_ERROR("Non trovo la tf! addio!");
+        exit(0);
+    }
     _start_tracking_sub = _nh.subscribe("/joy_control/start_tracking", 1, &PIPE_INSPECTION::start_tracking_cb, this);
     _rgb_sub.subscribe(_nh, _rgb_topic, 1);
     _depth_sub.subscribe(_nh, _depth_topic, 1);
@@ -527,8 +538,8 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         Eigen::Vector3d p_land;
         
         /* choose versor signum according to drone heading*/
-        //cout<< "body_x in cam frame: "<<_e1_b_c<<endl;
-        //cout<< "scalar prod result: "<<_e1_b_c.dot(v_land)<<endl;
+        cout<< "body_x in cam frame: "<<_e1_b_c<<endl;
+        cout<< "scalar prod result: "<<_e1_b_c.dot(v_land)<<endl;
         if(_e1_b_c.dot(v_land)<0.0){
             v_land = -v_land;
         }
