@@ -107,9 +107,9 @@ class PIPE_INSPECTION {
     public:
 
         PIPE_INSPECTION();
-        void extraction ();      
+        void extraction();      
         void inspection( );
-        void start_tracking_cb ( std_msgs::Bool data );        
+        void enable_cb( std_msgs::Bool data );        
 
         void run();
         void img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const sensor_msgs::ImageConstPtr &depth_msg);
@@ -124,6 +124,7 @@ class PIPE_INSPECTION {
         ros::Publisher _img_elaboration_output_pub;
         ros::Publisher _landing_point_pub;
         ros::Publisher _landing_vect_pub;
+        ros::Subscriber _enable_detection_sub;
         //ros::Publisher _velocity_data_pub;
         //ros::ServiceServer _inspection_task_srv;
         tf2_ros::TransformBroadcaster tf_broadcast;
@@ -135,6 +136,7 @@ class PIPE_INSPECTION {
         double _depth_scale_factor = 0.001; 
         double _depth_cutoff = 0.35;
         bool _land_on_nearest_point = true;
+        int _max_iteration_count = 1000;
         std::string _rgb_topic; 
         std::string _depth_topic; 
         std::string _camera_info_topic;     
@@ -151,8 +153,8 @@ class PIPE_INSPECTION {
         int _n_not_axis = 0;
         cv::Mat _depth_normalized;
 
-        ros::Subscriber _start_tracking_sub;
-        bool _start_tracking = false;
+        //ros::Subscriber _start_tracking_sub;
+        bool _enable_detection = false;
         bool _first_img = false;
         cv::Mat *_cam_cameraMatrix, *_cam_distCo, *_cam_R, *_cam_P;
 
@@ -174,12 +176,13 @@ class PIPE_INSPECTION {
 
 PIPE_INSPECTION::PIPE_INSPECTION() {
 
-    //reg = new regression();
+    _enable_detection = false;
 
     //_velocity_data_pub = _nh.advertise< geometry_msgs::Twist > ("/auto_control/twist", 1 );
-    _img_elaboration_output_pub = _nh.advertise< sensor_msgs::Image > ("/pipe_line_extraction/elaboration/compressed", 1);
+    _img_elaboration_output_pub = _nh.advertise< sensor_msgs::Image > ("/pipe_detector/elaboration/compressed", 1);
     _landing_point_pub = _nh.advertise< geometry_msgs::TwistStamped> ("/landing_point", 1);
     _landing_vect_pub = _nh.advertise< geometry_msgs::PoseStamped> ("/landing_vector", 1);
+    _enable_detection_sub = _nh.subscribe("/pipe_detector/enable", 1, &PIPE_INSPECTION::enable_cb, this);
     if( !_nh.getParam("rgb_image", _rgb_topic) ) {
         _rgb_topic =  "/d400/color/image_raw";
     }
@@ -206,6 +209,10 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
 
     if( !_nh.getParam("land_on_nearest_point", _land_on_nearest_point) ) {
         _land_on_nearest_point =  true; // if is true land on nearest point, else land on COM of the detected pipe
+    }
+
+    if( !_nh.getParam("max_iteration_count", _max_iteration_count) ) {
+        _max_iteration_count =  1000; // if is true land on nearest point, else land on COM of the detected pipe
     }
 
     //Get camera info---------------------------------------------------------------------------------------------
@@ -280,7 +287,7 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
         ROS_ERROR("Non trovo la tf! addio!");
         exit(0);
     }
-    _start_tracking_sub = _nh.subscribe("/joy_control/start_tracking", 1, &PIPE_INSPECTION::start_tracking_cb, this);
+    
     _rgb_sub.subscribe(_nh, _rgb_topic, 1);
     _depth_sub.subscribe(_nh, _depth_topic, 1);
     message_filters::Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), _rgb_sub, _depth_sub);
@@ -293,10 +300,9 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
 }
 
 
-void PIPE_INSPECTION::start_tracking_cb ( std_msgs::Bool b) {
-    _start_tracking = b.data;
-} // At the start, the UAV must be bring ahead the pipe 
-  // This callback is used to require the start of the tracking algorithm 
+void PIPE_INSPECTION::enable_cb ( std_msgs::Bool b) {
+    _enable_detection = b.data;
+}
 
 bool polyfit( const std::vector<double> &t,
               const std::vector<double> &v,
@@ -456,16 +462,27 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     cv::Mat element = cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(3, 3));
  
     bool done;
-    do {
-          cv::morphologyEx(mask, temp, cv::MORPH_OPEN, element);
-          cv::bitwise_not(temp, temp);
-          cv::bitwise_and(mask, temp, temp);
-          cv::bitwise_or(skel, temp, skel);
-          cv::erode(mask, mask, element);
-          double max;
-          cv::minMaxLoc(mask, 0, &max);
-          done = (max == 0);
-    } while (!done);
+    double max_loop;
+    int c =0;
+    //cout<<"ITERATIONS"<<" ";
+    do{
+        cv::morphologyEx(mask, temp, cv::MORPH_OPEN, element);
+        cv::bitwise_not(temp, temp);
+        cv::bitwise_and(mask, temp, temp);
+        cv::bitwise_or(skel, temp, skel);
+        cv::erode(mask, mask, element);
+
+        cv::minMaxLoc(mask, 0, &max_loop);
+        done = (max_loop == 0);
+        c++;
+        //cout<<c++<<" ";
+    }while(!done && (c < _max_iteration_count));
+    //ROS_INFO("elaboration: iter=%d, is done=%d",c,done);
+    // QUAAAAAAAAAA  
+    if(!done){
+        ROS_ERROR("Image elaboration fail, not done.");
+        return -1;
+    }
 
 
     cv::morphologyEx(skel, skel, cv::MORPH_OPEN, getStructuringElement(cv::MORPH_CROSS, cv::Size(1,1)));
@@ -505,7 +522,9 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     }
 
     /// *** line regression
-    cout<<"Npoints: "<<x_SG.size()<<endl;
+    //cout<<"Npoints: "<<x_SG.size()<<endl; //DEBUG
+    ROS_INFO("elaboration: iter=%d, done=%d, Npoints: %ld",c,done,x_SG.size()); //DEBUG
+    //ROS_INFO("Npoints: %ld",x_SG.size()); //DEBUG
     regr.resize(x_SG.size());
     for(int i=0; i<x_SG.size(); i++ ) {
         //pc[0] = (z) * ( (centroids.at<double>(i, 0) - _cx) * _fx_inv );
@@ -538,14 +557,14 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         Eigen::Vector3d p_land;
         
         /* choose versor signum according to drone heading*/
-        cout<< "body_x in cam frame: "<<_e1_b_c<<endl;
-        cout<< "scalar prod result: "<<_e1_b_c.dot(v_land)<<endl;
+        //cout<< "body_x in cam frame: "<<_e1_b_c.transpose()<<endl; //DEBUG
+        //cout<< "scalar prod result: "<<_e1_b_c.dot(v_land)<<endl; //DEBUG
         if(_e1_b_c.dot(v_land)<0.0){
             v_land = -v_land;
         }
         
-        cout<<"COM: "<<p_cog.transpose()<<endl;
-        cout<<"versor: "<<v_land.transpose()<<endl;
+        //cout<<"COM: "<<p_cog.transpose()<<endl; //DEBUG
+        //cout<<"versor: "<<v_land.transpose()<<endl; //DEBUG
 
         Eigen::Matrix3d R = utilities::versor2rotm(v_land );
         Eigen::Vector4d landing_quat = utilities::rot2quat(R);
@@ -639,7 +658,7 @@ void PIPE_INSPECTION::inspection()  {
 
     bool inspection_done = false;
     while( ros::ok()  ) {
-
+        //cout<< "----loop----"<<endl;
         //---Init
         pipeAxis_pxls.clear();   
         
@@ -667,9 +686,16 @@ void PIPE_INSPECTION::inspection()  {
         cv::Mat output_img;
         geometry_msgs::TwistStamped lp;
         geometry_msgs::PoseStamped land_vector;
-        int retval = pipeAxis_detect(_depth_normalized, depthfloat, depth, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img, lp, land_vector);     
-        //
+        int retval = -2;    
         
+        if(_enable_detection){
+            retval = pipeAxis_detect(_depth_normalized, depthfloat, depth, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img, lp, land_vector); 
+        }
+
+        if(retval == -2){
+            ROS_INFO("Detection not enabled");
+        }
+       
         if (retval == -1) {
            //if (_start_tracking) 
            ROS_WARN("Not axis detected");
@@ -685,17 +711,16 @@ void PIPE_INSPECTION::inspection()  {
         _n_not_axis=0;       
         
 
-        cout<< "ERROR STATUS = "<<retval<<endl<<endl;
-        
+        //cout<< "ERROR STATUS = "<<retval<<endl<<endl;
+        ROS_INFO("RET STATUS: %d",retval); //DEBUG
 
-        if(retval){
+        if(retval == 1){
             cv_ptr.image = output_img;
             _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
             //image plane approach (deprecated)
             lp.header.stamp = ros::Time::now();
             lp.header.frame_id = _depth_optical_frame;
             _landing_point_pub.publish( lp );
-
             // publish landing pose 
             land_vector.header.stamp = ros::Time::now();
             land_vector.header.frame_id = _depth_optical_frame;
