@@ -1,19 +1,21 @@
 ### real drone
-# rgb_image: "/d400/color/image_raw"
-# depth_image: "/d400/aligned_depth_to_color/image_raw"
-# camera_info: "/d400/aligned_depth_to_color/camera_info"
-# depth_optical_frame: "d400_depth_optical_frame"
-# depth_scale_factor: 0.001 #real camera
-# depth_cutoff: 0.3
-# land_on_nearest_point: true
-# max_iteration_count: 1000
+rgb_image: "/d400/color/image_raw"
+depth_image: "/d400/aligned_depth_to_color/image_raw"
+camera_info: "/d400/aligned_depth_to_color/camera_info"
+depth_optical_frame: "d400_depth_optical_frame"
+depth_scale_factor: 0.001 #real camera
+depth_cutoff: 0.3
+land_on_nearest_point: true
+max_iteration_count: 1000 #image operation anti-lock
+min_area_treshold: 1000 #min cluster area
+max_dist_treshold: 2.0
 
 ### simulation gazebo
-rgb_image: "/depth_camera/depth_camera/image_raw"
-depth_image: "/depth_camera/depth/disparity"
-camera_info: "/depth_camera/depth_camera/camera_info"
-depth_optical_frame: "camera_depth_optical_frame"
-depth_scale_factor: 1.0 #sim
-depth_cutoff: 0.35
-land_on_nearest_point: true
-max_iteration_count: 1000
+# rgb_image: "/depth_camera/depth_camera/image_raw"
+# depth_image: "/depth_camera/depth/disparity"
+# camera_info: "/depth_camera/depth_camera/camera_info"
+# depth_optical_frame: "camera_depth_optical_frame"
+# depth_scale_factor: 1.0 #sim
+# depth_cutoff: 0.35
+# land_on_nearest_point: true
+# max_iteration_count: 1000

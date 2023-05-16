@@ -125,6 +125,7 @@ class PIPE_INSPECTION {
         ros::Publisher _landing_point_pub;
         ros::Publisher _landing_vect_pub;
         ros::Subscriber _enable_detection_sub;
+        ros::Publisher _pipe_presence_pub;
         //ros::Publisher _velocity_data_pub;
         //ros::ServiceServer _inspection_task_srv;
         tf2_ros::TransformBroadcaster tf_broadcast;
@@ -137,6 +138,8 @@ class PIPE_INSPECTION {
         double _depth_cutoff = 0.35;
         bool _land_on_nearest_point = true;
         int _max_iteration_count = 1000;
+        int _min_area_treshold = 600;
+        double _max_dist_treshold = 1.8;
         std::string _rgb_topic; 
         std::string _depth_topic; 
         std::string _camera_info_topic;     
@@ -183,6 +186,7 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     _landing_point_pub = _nh.advertise< geometry_msgs::TwistStamped> ("/landing_point", 1);
     _landing_vect_pub = _nh.advertise< geometry_msgs::PoseStamped> ("/landing_vector", 1);
     _enable_detection_sub = _nh.subscribe("/pipe_detector/enable", 1, &PIPE_INSPECTION::enable_cb, this);
+    _pipe_presence_pub = _nh.advertise< std_msgs::Bool> ("/pipe_detector/pipe_presence", 1);
     if( !_nh.getParam("rgb_image", _rgb_topic) ) {
         _rgb_topic =  "/d400/color/image_raw";
     }
@@ -215,6 +219,14 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
         _max_iteration_count =  1000; // if is true land on nearest point, else land on COM of the detected pipe
     }
 
+    if( !_nh.getParam("min_area_treshold", _min_area_treshold) ) {
+        _min_area_treshold =  1000; // if is true land on nearest point, else land on COM of the detected pipe
+    }
+    if( !_nh.getParam("max_dist_treshold", _max_dist_treshold) ) {
+        _max_dist_treshold =  1000; // if is true land on nearest point, else land on COM of the detected pipe
+    }
+
+    
     //Get camera info---------------------------------------------------------------------------------------------
     _cam_cameraMatrix = new cv::Mat(3, 3, CV_64FC1);
     _cam_distCo = new cv::Mat(1, 5, CV_64FC1);
@@ -344,7 +356,8 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     int i = 0;
 
     _centroids.clear();
-
+    cv::Rect crop_region(0, 0,640, 450);
+    depth_normalized = depth_normalized(crop_region);
 
     for(int r=0;r<depth_normalized.rows;r++) {
         for(int c=0; c<depth_normalized.cols;c++) {
@@ -412,14 +425,23 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
         }
     }
 
-    int id_big_cluster;
-    int max_pixels=0;
-    for (int i=0; i<nLabels; i++) {
-        if(labels_area[i]>max_pixels) {
-            max_pixels = labels_area[i];
-            id_big_cluster = i;
-        }
+    // DEBUG 
+    std::cout<<"Nlabels: "<< nLabels<<std::endl;
+    for (int i=0; i<nLabels; i++){
+        std::cout<<"lab: "<<i;
+        std::cout<<"  area: "<<labels_area[i];
+        std::cout<<"  dist: "<<_centroids[i].norm()<<std::endl;
     }
+
+       ////
+    int id_big_cluster = 0;
+    // int max_pixels=0;
+    // for (int i=0; i<nLabels; i++) {
+    //     if(labels_area[i]>max_pixels) {
+    //         max_pixels = labels_area[i];
+    //         id_big_cluster = i;
+    //     }
+    // }
 
     float closer_centroid_dist = 10000;
     for( int i=1; i<nLabels; i++ ) {
@@ -428,6 +450,31 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
             id_big_cluster = i;
         }
     }
+
+    // float closer_centroid_dist = 100000;
+    // for( int i=1; i<nLabels; i++ ) {
+    //     if(labels_area[i]>_min_area_treshold){
+    //         if(_centroids[i].norm() < _max_dist_treshold){
+    //             if( _centroids[i].norm() < closer_centroid_dist) {
+    //                 closer_centroid_dist = _centroids[i].norm();
+    //                 id_big_cluster = i;
+    //             }
+    //         }
+    //     }
+        
+    // }
+
+    // float closer_centroid_dist = 10000;
+    // for( int i=1; i<nLabels; i++ ) {
+    //     if( _centroids[i].norm() < closer_centroid_dist && _centroids[i].norm() < _max_dist_treshold && labels_area[i]>_min_area_treshold) {
+    //         closer_centroid_dist = _centroids[i].norm();
+    //         id_big_cluster = i;
+    //     }
+    // }
+
+    // DEBUG 
+    std::cout<<"idBigClust: "<< id_big_cluster<<std::endl; 
+
     circle(mask, cv::Point(centroids.at<double>(id_big_cluster, 0), centroids.at<double>(id_big_cluster, 1)), 12, cv::Scalar(0,255,0), -1);
     
     // imshow("centroids", mask);
@@ -686,6 +733,7 @@ void PIPE_INSPECTION::inspection()  {
         cv::Mat output_img;
         geometry_msgs::TwistStamped lp;
         geometry_msgs::PoseStamped land_vector;
+        std_msgs::Bool presence;
         int retval = -2;    
         
         if(_enable_detection){
@@ -699,6 +747,8 @@ void PIPE_INSPECTION::inspection()  {
         if (retval == -1) {
            //if (_start_tracking) 
            ROS_WARN("Not axis detected");
+           cv_ptr.image = output_img;
+            _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
             // cv_ptr.image = mask2;
             // _img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );
 
@@ -713,6 +763,7 @@ void PIPE_INSPECTION::inspection()  {
 
         //cout<< "ERROR STATUS = "<<retval<<endl<<endl;
         ROS_INFO("RET STATUS: %d",retval); //DEBUG
+        presence.data = false;
 
         if(retval == 1){
             cv_ptr.image = output_img;
@@ -739,7 +790,10 @@ void PIPE_INSPECTION::inspection()  {
             transformStamped.transform.rotation.w = utilities::isnan(land_vector.pose.orientation.w) ? 1 : land_vector.pose.orientation.w;
 
             tf_broadcast.sendTransform(transformStamped);
+            presence.data = true;
         }
+
+        _pipe_presence_pub.publish(presence);
         rate.sleep();
     }
 }
