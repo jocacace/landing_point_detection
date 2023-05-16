@@ -16,7 +16,9 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   sensor_msgs
   tf
-  cv_bridge  
+  cv_bridge 
+  image_geometry 
+  image_transport
 )
 
 include_directories(/usr/include/eigen3)

@@ -25,6 +25,13 @@
 #include "geometry_msgs/Twist.h"
 #include <geometry_msgs/PoseStamped.h>
 #include "utils.h"
+// armarker
+#include <image_transport/image_transport.h>
+#include <image_geometry/pinhole_camera_model.h>
+#include <opencv2/highgui.hpp>
+#include <opencv2/aruco.hpp>
+#include <opencv2/imgproc.hpp>
+
 
 using namespace std;
 using namespace Eigen;
@@ -109,12 +116,13 @@ class PIPE_INSPECTION {
         PIPE_INSPECTION();
         void extraction();      
         void inspection( );
-        void enable_cb( std_msgs::Bool data );        
+        void enable_pipe_cb( std_msgs::Bool data );
+        void enable_ar_cb( std_msgs::Bool data );         
 
         void run();
         void img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const sensor_msgs::ImageConstPtr &depth_msg);
         int pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloat,  cv::Mat depth, cv::Mat rgb, std::vector<cv::Point> &pipeAxis_pixls, cv::Point2f &dir_2d_axis, cv::Mat &mask_pipe, cv::Mat &output_img, geometry_msgs::TwistStamped & lp ,geometry_msgs::PoseStamped & landing_vect_pos);
-       
+        int armarker_detect(cv::Mat rgb, cv::Mat &output_img ,geometry_msgs::PoseStamped & landing_vect_pos );
     private:
 
         ros::NodeHandle _nh;
@@ -124,8 +132,10 @@ class PIPE_INSPECTION {
         ros::Publisher _img_elaboration_output_pub;
         ros::Publisher _landing_point_pub;
         ros::Publisher _landing_vect_pub;
-        ros::Subscriber _enable_detection_sub;
+        ros::Subscriber _enable_pipe_detection_sub;
+        ros::Subscriber _enable_ar_detection_sub;
         ros::Publisher _pipe_presence_pub;
+        ros::Publisher _ar_presence_pub;
         //ros::Publisher _velocity_data_pub;
         //ros::ServiceServer _inspection_task_srv;
         tf2_ros::TransformBroadcaster tf_broadcast;
@@ -142,8 +152,10 @@ class PIPE_INSPECTION {
         double _max_dist_treshold = 1.8;
         std::string _rgb_topic; 
         std::string _depth_topic; 
-        std::string _camera_info_topic;     
+        std::string _depth_camera_info_topic;    
+        std::string _rgb_camera_info_topic; 
         std::string _depth_optical_frame;
+        std::string _rgb_optical_frame;
 
         Eigen::Vector3d _pb_c;
         Eigen::Vector3d _e1_b_c;
@@ -157,7 +169,9 @@ class PIPE_INSPECTION {
         cv::Mat _depth_normalized;
 
         //ros::Subscriber _start_tracking_sub;
-        bool _enable_detection = false;
+        bool _enable_pipe_detection = false;
+        bool _enable_ar_detection = false;
+        
         bool _first_img = false;
         cv::Mat *_cam_cameraMatrix, *_cam_distCo, *_cam_R, *_cam_P;
 
@@ -172,6 +186,18 @@ class PIPE_INSPECTION {
         vector< Eigen::Vector3d > _centroids;
         regressor3d regr;
 
+        //armarker
+        image_geometry::PinholeCameraModel _rgb_camera_model;
+        cv::Mat _rgb_distortion_coefficients;
+        cv::Matx33d _rgb_intrinsic_matrix;
+        cv::Ptr<cv::aruco::DetectorParameters> _ar_detector_params;
+        cv::Ptr<cv::aruco::Dictionary> _ar_dictionary;
+        int _blur_window_size = 7;
+        bool _enable_blur = true;
+        double _marker_size = 0.045;
+        int _crawler_ar_id_fwd = 3;
+        int _crawler_ar_id_bwd = 11;
+
         
 };
 
@@ -179,14 +205,16 @@ class PIPE_INSPECTION {
 
 PIPE_INSPECTION::PIPE_INSPECTION() {
 
-    _enable_detection = false;
+    _enable_pipe_detection = false;
 
     //_velocity_data_pub = _nh.advertise< geometry_msgs::Twist > ("/auto_control/twist", 1 );
     _img_elaboration_output_pub = _nh.advertise< sensor_msgs::Image > ("/pipe_detector/elaboration/compressed", 1);
     _landing_point_pub = _nh.advertise< geometry_msgs::TwistStamped> ("/landing_point", 1);
     _landing_vect_pub = _nh.advertise< geometry_msgs::PoseStamped> ("/landing_vector", 1);
-    _enable_detection_sub = _nh.subscribe("/pipe_detector/enable", 1, &PIPE_INSPECTION::enable_cb, this);
-    _pipe_presence_pub = _nh.advertise< std_msgs::Bool> ("/pipe_detector/pipe_presence", 1);
+    _enable_pipe_detection_sub = _nh.subscribe("/pipe_detector/enable", 1, &PIPE_INSPECTION::enable_pipe_cb, this);
+    _enable_ar_detection_sub = _nh.subscribe("/aruco_detector/enable", 1, &PIPE_INSPECTION::enable_ar_cb, this);
+    _pipe_presence_pub = _nh.advertise< std_msgs::Bool> ("/pipe_detector/pipe_pipe_presence", 1);
+    _ar_presence_pub = _nh.advertise< std_msgs::Bool> ("/aruco_detector/aruco_pipe_presence", 1);
     if( !_nh.getParam("rgb_image", _rgb_topic) ) {
         _rgb_topic =  "/d400/color/image_raw";
     }
@@ -195,12 +223,20 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
         _depth_topic =  "/d400/depth/image_raw";
     }
     
-    if( !_nh.getParam("camera_info", _camera_info_topic) ) {
-        _camera_info_topic =  "/d400/depth/camera_info";
+    if( !_nh.getParam("rgb_camera_info", _rgb_camera_info_topic) ) {
+        _rgb_camera_info_topic =  "/d400/color/camera_info";
+    }
+
+    if( !_nh.getParam("depth_camera_info", _depth_camera_info_topic) ) {
+        _depth_camera_info_topic =  "/d400/depth/camera_info";
     }
 
     if( !_nh.getParam("depth_optical_frame", _depth_optical_frame) ) {
         _depth_optical_frame =  "d400_depth_optical_frame";
+    }
+    
+    if( !_nh.getParam("rgb_optical_frame", _rgb_optical_frame) ) {
+        _rgb_optical_frame =  "d400_color_optical_frame";
     }
 
     if( !_nh.getParam("depth_scale_factor", _depth_scale_factor) ) {
@@ -226,6 +262,9 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
         _max_dist_treshold =  1000; // if is true land on nearest point, else land on COM of the detected pipe
     }
 
+    if( !_nh.getParam("ar_marker_size", _marker_size) ) {
+        _marker_size =  0.045; 
+    }
     
     //Get camera info---------------------------------------------------------------------------------------------
     _cam_cameraMatrix = new cv::Mat(3, 3, CV_64FC1);
@@ -234,7 +273,7 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     _cam_P = new cv::Mat(3, 4, CV_64FC1);
     sensor_msgs::CameraInfo camera_info;
     boost::shared_ptr<sensor_msgs::CameraInfo const> sharedCamera_info;
-    sharedCamera_info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(_camera_info_topic,_nh);
+    sharedCamera_info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(_depth_camera_info_topic,_nh);
     if(sharedCamera_info != NULL){
         camera_info = *sharedCamera_info;
         //---K
@@ -265,12 +304,37 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
             }
         }
     }
+    else{
+        ROS_ERROR("not retrived depth camera info");
+        exit(0);
+    }
 
     _cx = _cam_cameraMatrix->at<double>(0,2);
     _cy = _cam_cameraMatrix->at<double>(1,2);
     _fx_inv = 1.0 / _cam_cameraMatrix->at<double>(0,0);
     _fy_inv = 1.0 / _cam_cameraMatrix->at<double>(1,1);
-   
+
+    /// armarker rgb info  -----------------------------
+    _ar_dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_50);
+    _ar_detector_params = cv::aruco::DetectorParameters::create();
+    //_ar_detector_params.adaptiveThreshWinSizeStep = 4 //TODO should be param ?
+    if( !_nh.getParam("aruco_adaptiveThreshWinSizeStep", _ar_detector_params->adaptiveThreshWinSizeStep) ) {
+        _ar_detector_params->adaptiveThreshWinSizeStep = 4;
+    }
+     
+    sensor_msgs::CameraInfo _rgb_camera_info;
+    boost::shared_ptr<sensor_msgs::CameraInfo const> _rgb_sharedCamera_info;
+    _rgb_sharedCamera_info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(_rgb_camera_info_topic,_nh);
+    if(_rgb_sharedCamera_info != NULL){
+        _rgb_camera_info = *_rgb_sharedCamera_info;
+        _rgb_camera_model.fromCameraInfo(_rgb_camera_info);
+        _rgb_camera_model.distortionCoeffs().copyTo(_rgb_distortion_coefficients);
+        _rgb_intrinsic_matrix = _rgb_camera_model.intrinsicMatrix();
+    }
+    else{
+        ROS_ERROR("not retrived rgb camera info");
+        exit(0);
+    }
     //Get base link pose in camera frame ------------------------------------------------------
     _pb_c<<0.017, 0.089, -0.117; // default in case of tf failure
     _e1_b_c<<0.0, -0.939443, 0.342706;
@@ -312,8 +376,12 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
 }
 
 
-void PIPE_INSPECTION::enable_cb ( std_msgs::Bool b) {
-    _enable_detection = b.data;
+void PIPE_INSPECTION::enable_pipe_cb ( std_msgs::Bool b) {
+    _enable_pipe_detection = b.data;
+}
+
+void PIPE_INSPECTION::enable_ar_cb ( std_msgs::Bool b) {
+    _enable_ar_detection = b.data;
 }
 
 bool polyfit( const std::vector<double> &t,
@@ -653,6 +721,102 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     
 }
 
+int PIPE_INSPECTION::armarker_detect(cv::Mat image, cv::Mat &output_img ,geometry_msgs::PoseStamped & landing_vect_pos ){
+    // Smooth the image to improve detection results
+    if (_enable_blur) {
+        cv::GaussianBlur(image, image, cv::Size(_blur_window_size, _blur_window_size), 0, 0);
+    }
+    // Detect the markers
+    int mark_idx_fwd = -1;
+    int mark_idx_bwd = -1;
+    bool crawler_found = false;
+    bool fwd_found = false;
+    bool bwd_found = false;
+    std::vector<int> ids;
+    std::vector<std::vector<cv::Point2f>> corners, rejected;
+    cv::aruco::detectMarkers(image, _ar_dictionary, corners, ids, _ar_detector_params, rejected);
+
+    image.copyTo(output_img);
+    if(ids.empty()){
+        cv::putText(output_img, "no markers found", cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, CV_RGB(255, 0, 0), 3);
+        ROS_WARN("No markers found");
+        return -1;
+    }
+    else if (ids.size()>0){
+        
+        for(int i =0; i< ids.size();i++){
+            if(ids[i] == _crawler_ar_id_fwd){
+                mark_idx_fwd  = i;
+                fwd_found = true;
+            }
+            if(ids[i] == _crawler_ar_id_bwd){
+                mark_idx_bwd  = i;
+                bwd_found = true;
+            }
+        }
+
+        if(fwd_found && bwd_found){
+            crawler_found = true;
+            ROS_INFO("crawler found");
+        }
+        else{
+            crawler_found = false;
+        }
+
+        if(!crawler_found){
+            ROS_WARN("No crawler id found");
+            landing_vect_pos.pose.position.x = 0;
+            landing_vect_pos.pose.position.y = 0;
+            landing_vect_pos.pose.position.z = 0;
+            landing_vect_pos.pose.orientation.w = 1;
+            landing_vect_pos.pose.orientation.x = 0;
+            landing_vect_pos.pose.orientation.y = 0;
+            landing_vect_pos.pose.orientation.z = 0;
+            return -1;
+        }
+        else{
+            // Compute poses of markers
+            std::vector<cv::Vec3d> rotation_vectors, translation_vectors;
+            cv::aruco::estimatePoseSingleMarkers(corners, _marker_size, _rgb_intrinsic_matrix, _rgb_distortion_coefficients, rotation_vectors, translation_vectors);
+            // Draw marker poses
+            for (int i = 0; i < rotation_vectors.size(); ++i) {
+                cv::aruco::drawAxis(output_img, _rgb_intrinsic_matrix, _rgb_distortion_coefficients, rotation_vectors[i], translation_vectors[i], _marker_size * 0.5f);
+            }
+            cv::aruco::drawDetectedMarkers(output_img, corners, ids);
+
+            Eigen::Vector3d ar_pose_fwd;
+            Eigen::Vector3d ar_pose_bwd;
+            Eigen::Vector3d land_pose;
+            Eigen::Vector3d land_versor;
+            Eigen::Vector3d ar_rpy;
+            Eigen::Matrix3d ar_R;
+            ar_pose_fwd<<translation_vectors[mark_idx_fwd][0],translation_vectors[mark_idx_fwd][1],translation_vectors[mark_idx_fwd][2];
+            ar_pose_bwd<<translation_vectors[mark_idx_bwd][0],translation_vectors[mark_idx_bwd][1],translation_vectors[mark_idx_bwd][2];
+            //ar_rpy<<rotation_vectors[mark_idx_fwd][0],rotation_vectors[mark_idx_fwd][1],rotation_vectors[mark_idx_fwd][2];
+            //ar_R = utilities::XYZ2R(ar_rpy);
+            land_pose = (ar_pose_fwd + ar_pose_bwd)/2.0;
+            land_versor = (ar_pose_fwd - ar_pose_bwd);
+
+            if(_e1_b_c.dot(land_versor)<0.0){
+                land_versor = -land_versor;
+            }
+
+            ar_R = utilities::versor2rotm(land_versor );
+            Eigen::Vector4d ar_quat = utilities::rot2quat(ar_R);
+            ar_quat = ar_quat/ar_quat.norm();
+            landing_vect_pos.pose.position.x = land_pose[0];
+            landing_vect_pos.pose.position.y = land_pose[1];
+            landing_vect_pos.pose.position.z = land_pose[2];
+            landing_vect_pos.pose.orientation.w = ar_quat[0];
+            landing_vect_pos.pose.orientation.x = ar_quat[1];
+            landing_vect_pos.pose.orientation.y = ar_quat[2];
+            landing_vect_pos.pose.orientation.z = ar_quat[3];
+            return 1;
+        }
+    }
+    return -1; //should never be reached
+}
+
 //Work on this function
 void PIPE_INSPECTION::img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const sensor_msgs::ImageConstPtr &depth_msg) {
 
@@ -702,6 +866,8 @@ void PIPE_INSPECTION::inspection()  {
     std::vector<cv::Point> pipeAxis_pxls;
     cv::Point2f dir_axis_2d;
     cv::Mat mask_pipe;
+    std::string parent_frame;
+    int pipe_or_aruco = 0; // 1=pipe 2 = aruco
 
     bool inspection_done = false;
     while( ros::ok()  ) {
@@ -733,53 +899,61 @@ void PIPE_INSPECTION::inspection()  {
         cv::Mat output_img;
         geometry_msgs::TwistStamped lp;
         geometry_msgs::PoseStamped land_vector;
-        std_msgs::Bool presence;
+        std_msgs::Bool pipe_presence;
+        std_msgs::Bool ar_presence;
         int retval = -2;    
+        // just aruco test
+        // int ar_res = armarker_detect(rgb, output_img ,land_vector );
+        // cv_ptr.image = output_img;
+        // _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
         
-        if(_enable_detection){
+        if(_enable_pipe_detection){
             retval = pipeAxis_detect(_depth_normalized, depthfloat, depth, rgb, pipeAxis_pxls, dir_axis_2d, mask_pipe, output_img, lp, land_vector); 
+            parent_frame = _depth_optical_frame;
+            pipe_or_aruco = 1;
         }
-
-        if(retval == -2){
-            ROS_INFO("Detection not enabled");
+        else if(_enable_ar_detection){
+            retval = armarker_detect(rgb, output_img ,land_vector );
+            parent_frame = _rgb_optical_frame;
+            pipe_or_aruco = 2;
         }
-       
-        if (retval == -1) {
-           //if (_start_tracking) 
-           ROS_WARN("Not axis detected");
-           cv_ptr.image = output_img;
-            _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
-            // cv_ptr.image = mask2;
-            // _img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );
-
-            _n_not_axis++;
-            // cv::Mat mask2 = rgb.clone();
-            // cv_ptr.image = mask2;
-            // _img_elaboration_output_pub.publish( cv_ptr.toCompressedImageMsg() );      
-            //continue;
-        }
-        _n_not_axis=0;       
-        
 
         //cout<< "ERROR STATUS = "<<retval<<endl<<endl;
         ROS_INFO("RET STATUS: %d",retval); //DEBUG
-        presence.data = false;
 
-        if(retval == 1){
+        if(retval == -2){
+            ROS_INFO("Detection not enabled");
+            pipe_presence.data = false;
+            ar_presence.data = false;
+            _pipe_presence_pub.publish(pipe_presence);
+            _ar_presence_pub.publish(ar_presence);
+        }       
+        else if (retval == -1) {
+            ROS_WARN("Not axis detected");
             cv_ptr.image = output_img;
             _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
-            //image plane approach (deprecated)
-            lp.header.stamp = ros::Time::now();
-            lp.header.frame_id = _depth_optical_frame;
-            _landing_point_pub.publish( lp );
+            _n_not_axis++;
+            pipe_presence.data = false;
+            ar_presence.data = false;
+            _pipe_presence_pub.publish(pipe_presence);
+            _ar_presence_pub.publish(ar_presence);
+        }
+        else if(retval == 1){
+            _n_not_axis=0; 
+            cv_ptr.image = output_img;
+            _img_elaboration_output_pub.publish( cv_ptr.toImageMsg() );
+            ////image plane approach (deprecated)
+            // lp.header.stamp = ros::Time::now();
+            // lp.header.frame_id = parent_frame;
+            // _landing_point_pub.publish( lp );
             // publish landing pose 
             land_vector.header.stamp = ros::Time::now();
-            land_vector.header.frame_id = _depth_optical_frame;
+            land_vector.header.frame_id = parent_frame;
             _landing_vect_pub.publish(land_vector);       
             // publish also tf
             geometry_msgs::TransformStamped transformStamped;
             transformStamped.header.stamp = ros::Time::now();
-            transformStamped.header.frame_id = _depth_optical_frame;
+            transformStamped.header.frame_id = parent_frame;
             transformStamped.child_frame_id = "landing_frame";
             transformStamped.transform.translation.x = utilities::isnan(land_vector.pose.position.x) ? 0 : land_vector.pose.position.x;
             transformStamped.transform.translation.y = utilities::isnan(land_vector.pose.position.y) ? 0 : land_vector.pose.position.y;
@@ -790,10 +964,22 @@ void PIPE_INSPECTION::inspection()  {
             transformStamped.transform.rotation.w = utilities::isnan(land_vector.pose.orientation.w) ? 1 : land_vector.pose.orientation.w;
 
             tf_broadcast.sendTransform(transformStamped);
-            presence.data = true;
+
+            if(pipe_or_aruco == 1){ //pipe
+                pipe_presence.data = true;
+                _pipe_presence_pub.publish(pipe_presence);
+                ar_presence.data = false;
+                _ar_presence_pub.publish(ar_presence);
+            }
+            else if(pipe_or_aruco == 2){ //aruco
+                ar_presence.data = true;
+                _ar_presence_pub.publish(ar_presence);
+                pipe_presence.data = false;
+                _pipe_presence_pub.publish(pipe_presence);
+            } 
         }
 
-        _pipe_presence_pub.publish(presence);
+        //_pipe_pipe_presence_pub.publish(pipe_presence);
         rate.sleep();
     }
 }
