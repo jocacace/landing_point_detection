@@ -213,8 +213,8 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     _landing_vect_pub = _nh.advertise< geometry_msgs::PoseStamped> ("/landing_vector", 1);
     _enable_pipe_detection_sub = _nh.subscribe("/pipe_detector/enable", 1, &PIPE_INSPECTION::enable_pipe_cb, this);
     _enable_ar_detection_sub = _nh.subscribe("/aruco_detector/enable", 1, &PIPE_INSPECTION::enable_ar_cb, this);
-    _pipe_presence_pub = _nh.advertise< std_msgs::Bool> ("/pipe_detector/pipe_pipe_presence", 1);
-    _ar_presence_pub = _nh.advertise< std_msgs::Bool> ("/aruco_detector/aruco_pipe_presence", 1);
+    _pipe_presence_pub = _nh.advertise< std_msgs::Bool> ("/pipe_detector/pipe_presence", 1);
+    _ar_presence_pub = _nh.advertise< std_msgs::Bool> ("/aruco_detector/aruco_presence", 1);
     if( !_nh.getParam("rgb_image", _rgb_topic) ) {
         _rgb_topic =  "/d400/color/image_raw";
     }
