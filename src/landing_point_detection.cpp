@@ -363,6 +363,7 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
         ROS_ERROR("Non trovo la tf! addio!");
         exit(0);
     }
+    ROS_WARN("front versor is: [%f, %f, %f]",_e1_b_c(0),_e1_b_c(1),_e1_b_c(2));
     
     _rgb_sub.subscribe(_nh, _rgb_topic, 1);
     _depth_sub.subscribe(_nh, _depth_topic, 1);
@@ -796,9 +797,11 @@ int PIPE_INSPECTION::armarker_detect(cv::Mat image, cv::Mat &output_img ,geometr
             //ar_R = utilities::XYZ2R(ar_rpy);
             land_pose = (ar_pose_fwd + ar_pose_bwd)/2.0;
             land_versor = (ar_pose_fwd - ar_pose_bwd);
+            land_versor = land_versor/land_versor.norm();
 
             if(_e1_b_c.dot(land_versor)<0.0){
                 land_versor = -land_versor;
+                ROS_INFO("change signum to versor");
             }
 
             ar_R = utilities::versor2rotm(land_versor );
