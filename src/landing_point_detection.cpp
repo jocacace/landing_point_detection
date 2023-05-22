@@ -495,12 +495,12 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     }
 
     // DEBUG 
-    std::cout<<"Nlabels: "<< nLabels<<std::endl;
-    for (int i=0; i<nLabels; i++){
-        std::cout<<"lab: "<<i;
-        std::cout<<"  area: "<<labels_area[i];
-        std::cout<<"  dist: "<<_centroids[i].norm()<<std::endl;
-    }
+    // std::cout<<"Nlabels: "<< nLabels<<std::endl;
+    // for (int i=0; i<nLabels; i++){
+    //     std::cout<<"lab: "<<i;
+    //     std::cout<<"  area: "<<labels_area[i];
+    //     std::cout<<"  dist: "<<_centroids[i].norm()<<std::endl;
+    // }
 
        ////
     int id_big_cluster = 0;
@@ -542,7 +542,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     // }
 
     // DEBUG 
-    std::cout<<"idBigClust: "<< id_big_cluster<<std::endl; 
+    //std::cout<<"idBigClust: "<< id_big_cluster<<std::endl; 
 
     circle(mask, cv::Point(centroids.at<double>(id_big_cluster, 0), centroids.at<double>(id_big_cluster, 1)), 12, cv::Scalar(0,255,0), -1);
     
