@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <launch>
+  <arg name="out" default="screen" /> 
 
   <rosparam command="load" file="$(find landing_point_detection)/conf/params.yaml" />
 
-
-  <node pkg="landing_point_detection" type="landing_point_detection" name="landing_point_detection" output="screen">
+  <node pkg="landing_point_detection" type="landing_point_detection" name="landing_point_detection" output="$(arg out)">
   </node>
 
 </launch>

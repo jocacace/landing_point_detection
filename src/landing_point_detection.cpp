@@ -423,9 +423,9 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     double min;
     double max;
     int i = 0;
-
+    int d_crop = 55;
     _centroids.clear();
-    cv::Rect crop_region(0, 0,640, 450);
+    cv::Rect crop_region(0, d_crop, 640, 480- d_crop);
     depth_normalized = depth_normalized(crop_region);
 
     for(int r=0;r<depth_normalized.rows;r++) {
