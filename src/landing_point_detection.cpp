@@ -146,6 +146,7 @@ class PIPE_INSPECTION {
         float _inspection_distance = 0.8; 
         double _depth_scale_factor = 0.001; 
         double _depth_cutoff = 0.35;
+        int _depth_crop_px = 55;
         bool _land_on_nearest_point = true;
         int _max_iteration_count = 1000;
         int _min_area_treshold = 600;
@@ -216,27 +217,27 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     _pipe_presence_pub = _nh.advertise< std_msgs::Bool> ("/pipe_detector/pipe_presence", 1);
     _ar_presence_pub = _nh.advertise< std_msgs::Bool> ("/aruco_detector/aruco_presence", 1);
     if( !_nh.getParam("rgb_image", _rgb_topic) ) {
-        _rgb_topic =  "/d400/color/image_raw";
+        _rgb_topic =  "/pipecam/color/image_raw";
     }
 
     if( !_nh.getParam("depth_image", _depth_topic) ) {
-        _depth_topic =  "/d400/depth/image_raw";
+        _depth_topic =  "/pipecam/depth/image_raw";
     }
     
     if( !_nh.getParam("rgb_camera_info", _rgb_camera_info_topic) ) {
-        _rgb_camera_info_topic =  "/d400/color/camera_info";
+        _rgb_camera_info_topic =  "/pipecam/color/camera_info";
     }
 
     if( !_nh.getParam("depth_camera_info", _depth_camera_info_topic) ) {
-        _depth_camera_info_topic =  "/d400/depth/camera_info";
+        _depth_camera_info_topic =  "/pipecam/depth/camera_info";
     }
 
     if( !_nh.getParam("depth_optical_frame", _depth_optical_frame) ) {
-        _depth_optical_frame =  "d400_depth_optical_frame";
+        _depth_optical_frame =  "pipecam_depth_optical_frame";
     }
     
     if( !_nh.getParam("rgb_optical_frame", _rgb_optical_frame) ) {
-        _rgb_optical_frame =  "d400_color_optical_frame";
+        _rgb_optical_frame =  "pipecam_color_optical_frame";
     }
 
     if( !_nh.getParam("depth_scale_factor", _depth_scale_factor) ) {
@@ -245,6 +246,10 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
 
     if( !_nh.getParam("depth_cutoff", _depth_cutoff) ) {
         _depth_cutoff =  0.35; // not considering pipe point too near camera to avoid "lambda like" skeleton at the end of fov.
+    }
+
+    if( !_nh.getParam("depth_crop_px", _depth_crop_px) ) {
+        _depth_crop_px =  55; // crop image to avoid clustering drone foots
     }
 
     if( !_nh.getParam("land_on_nearest_point", _land_on_nearest_point) ) {
@@ -423,7 +428,7 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     double min;
     double max;
     int i = 0;
-    int d_crop = 55;
+    int d_crop = _depth_crop_px;
     _centroids.clear();
     cv::Rect crop_region(0, d_crop, 640, 480- d_crop);
     depth_normalized = depth_normalized(crop_region);

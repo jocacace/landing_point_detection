@@ -1,12 +1,13 @@
 ### real drone
-rgb_image: "/d400/color/image_raw"
-depth_image: "/d400/aligned_depth_to_color/image_raw"
-depth_camera_info: "/d400/aligned_depth_to_color/camera_info"
-rgb_camera_info: "/d400/color/camera_info"
-depth_optical_frame: "d400_depth_optical_frame"
-rgb_optical_frame: "d400_color_optical_frame"
+rgb_image: "/pipecam/color/image_raw"
+depth_image: "/pipecam/aligned_depth_to_color/image_raw"
+depth_camera_info: "/pipecam/aligned_depth_to_color/camera_info"
+rgb_camera_info: "/pipecam/color/camera_info"
+depth_optical_frame: "pipecam_depth_optical_frame"
+rgb_optical_frame: "pipecam_color_optical_frame"
 depth_scale_factor: 0.001 #real camera
 depth_cutoff: 0.3
+depth_crop_px: 80 #crop pixels to avoid foots in cluster
 land_on_nearest_point: true
 max_iteration_count: 1000 #image operation anti-lock
 min_area_treshold: 1000 #min cluster area #deprecated
