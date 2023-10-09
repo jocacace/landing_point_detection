@@ -117,7 +117,8 @@ class PIPE_INSPECTION {
         void extraction();      
         void inspection( );
         void enable_pipe_cb( std_msgs::Bool data );
-        void enable_ar_cb( std_msgs::Bool data );         
+        void enable_ar_cb( std_msgs::Bool data );   
+        void load_params();      
 
         void run();
         void img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const sensor_msgs::ImageConstPtr &depth_msg);
@@ -202,9 +203,89 @@ class PIPE_INSPECTION {
         
 };
 
+void PIPE_INSPECTION::load_params(){
+    int ret = 1;
+    if( !_nh.getParam("/landing_point_detection/rgb_image", _rgb_topic) ) {
+        _rgb_topic =  "/pipecam/color/image_raw";
+        ROS_ERROR("failed get param: rgb_image");
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/depth_image", _depth_topic) ) {
+        _depth_topic =  "/pipecam/depth/image_raw";
+        ROS_ERROR("failed get param: depth_image");
+        ret =0;
+    }
+    
+    if( !_nh.getParam("/landing_point_detection/rgb_camera_info", _rgb_camera_info_topic) ) {
+        _rgb_camera_info_topic =  "/pipecam/color/camera_info";
+        ROS_ERROR("failed get param: rgb_camera_info");
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/depth_camera_info", _depth_camera_info_topic) ) {
+        _depth_camera_info_topic =  "/pipecam/depth/camera_info";
+        ROS_ERROR("failed get param: depth_camera_info");
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/depth_optical_frame", _depth_optical_frame) ) {
+        _depth_optical_frame =  "pipecam_depth_optical_frame";
+        ROS_ERROR("failed get param: depth_optical_frame");
+        ret =0;
+    }
+    
+    if( !_nh.getParam("/landing_point_detection/rgb_optical_frame", _rgb_optical_frame) ) {
+        _rgb_optical_frame =  "pipecam_color_optical_frame";
+        ROS_ERROR("failed get param: rgb_optical_frame");
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/depth_scale_factor", _depth_scale_factor) ) {
+        _depth_scale_factor =  0.001; // 1 in simulation (gazebo), 1000 for real RS camera
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/depth_cutoff", _depth_cutoff) ) {
+        _depth_cutoff =  0.35; // not considering pipe point too near camera to avoid "lambda like" skeleton at the end of fov.
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/depth_crop_px", _depth_crop_px) ) {
+        _depth_crop_px =  55; // crop image to avoid clustering drone foots
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/land_on_nearest_point", _land_on_nearest_point) ) {
+        _land_on_nearest_point =  true; // if is true land on nearest point, else land on COM of the detected pipe
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/max_iteration_count", _max_iteration_count) ) {
+        _max_iteration_count =  1000; // if is true land on nearest point, else land on COM of the detected pipe
+        ret =0;
+    }
+
+    if( !_nh.getParam("/landing_point_detection/min_area_treshold", _min_area_treshold) ) {
+        _min_area_treshold =  1000; // if is true land on nearest point, else land on COM of the detected pipe
+        ret =0;
+    }
+    if( !_nh.getParam("/landing_point_detection/max_dist_treshold", _max_dist_treshold) ) {
+        _max_dist_treshold =  1000; // if is true land on nearest point, else land on COM of the detected pipe
+        ret =0;
+    }
+  
+    if( !_nh.getParam("/landing_point_detection/ar_marker_size", _marker_size) ) {
+        _marker_size =  0.045; 
+        ret =0;
+    }
+
+    if(ret ==0) ROS_ERROR("failed to load parameters");
+}
 
 
 PIPE_INSPECTION::PIPE_INSPECTION() {
+    load_params();
 
     _enable_pipe_detection = false;
 
@@ -216,60 +297,7 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
     _enable_ar_detection_sub = _nh.subscribe("/aruco_detector/enable", 1, &PIPE_INSPECTION::enable_ar_cb, this);
     _pipe_presence_pub = _nh.advertise< std_msgs::Bool> ("/pipe_detector/pipe_presence", 1);
     _ar_presence_pub = _nh.advertise< std_msgs::Bool> ("/aruco_detector/aruco_presence", 1);
-    if( !_nh.getParam("rgb_image", _rgb_topic) ) {
-        _rgb_topic =  "/pipecam/color/image_raw";
-    }
-
-    if( !_nh.getParam("depth_image", _depth_topic) ) {
-        _depth_topic =  "/pipecam/depth/image_raw";
-    }
     
-    if( !_nh.getParam("rgb_camera_info", _rgb_camera_info_topic) ) {
-        _rgb_camera_info_topic =  "/pipecam/color/camera_info";
-    }
-
-    if( !_nh.getParam("depth_camera_info", _depth_camera_info_topic) ) {
-        _depth_camera_info_topic =  "/pipecam/depth/camera_info";
-    }
-
-    if( !_nh.getParam("depth_optical_frame", _depth_optical_frame) ) {
-        _depth_optical_frame =  "pipecam_depth_optical_frame";
-    }
-    
-    if( !_nh.getParam("rgb_optical_frame", _rgb_optical_frame) ) {
-        _rgb_optical_frame =  "pipecam_color_optical_frame";
-    }
-
-    if( !_nh.getParam("depth_scale_factor", _depth_scale_factor) ) {
-        _depth_scale_factor =  0.001; // 1 in simulation (gazebo), 1000 for real RS camera
-    }
-
-    if( !_nh.getParam("depth_cutoff", _depth_cutoff) ) {
-        _depth_cutoff =  0.35; // not considering pipe point too near camera to avoid "lambda like" skeleton at the end of fov.
-    }
-
-    if( !_nh.getParam("depth_crop_px", _depth_crop_px) ) {
-        _depth_crop_px =  55; // crop image to avoid clustering drone foots
-    }
-
-    if( !_nh.getParam("land_on_nearest_point", _land_on_nearest_point) ) {
-        _land_on_nearest_point =  true; // if is true land on nearest point, else land on COM of the detected pipe
-    }
-
-    if( !_nh.getParam("max_iteration_count", _max_iteration_count) ) {
-        _max_iteration_count =  1000; // if is true land on nearest point, else land on COM of the detected pipe
-    }
-
-    if( !_nh.getParam("min_area_treshold", _min_area_treshold) ) {
-        _min_area_treshold =  1000; // if is true land on nearest point, else land on COM of the detected pipe
-    }
-    if( !_nh.getParam("max_dist_treshold", _max_dist_treshold) ) {
-        _max_dist_treshold =  1000; // if is true land on nearest point, else land on COM of the detected pipe
-    }
-
-    if( !_nh.getParam("ar_marker_size", _marker_size) ) {
-        _marker_size =  0.045; 
-    }
     
     //Get camera info---------------------------------------------------------------------------------------------
     _cam_cameraMatrix = new cv::Mat(3, 3, CV_64FC1);
@@ -993,7 +1021,7 @@ void PIPE_INSPECTION::inspection()  {
 }
 
 int main(int argc, char **argv) {
-    ros::init(argc, argv, "pipe_line_extraction");
+    ros::init(argc, argv, "landing_point_detection");
     PIPE_INSPECTION inspection;
     return 0;
 }

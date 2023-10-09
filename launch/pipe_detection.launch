@@ -3,9 +3,7 @@
 <launch>
   <arg name="out" default="screen" /> 
 
-  <rosparam command="load" file="$(find landing_point_detection)/conf/params.yaml" />
-
-  <node pkg="landing_point_detection" type="landing_point_detection" name="landing_point_detection" output="$(arg out)">
-  </node>
+  <rosparam  file="$(find landing_point_detection)/param/landing_point_detection_params.yaml" command="load"/>
+  <node pkg="landing_point_detection" type="landing_point_detection" name="landing_point_detection" output="$(arg out)" />
 
 </launch>
