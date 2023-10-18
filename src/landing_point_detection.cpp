@@ -162,6 +162,7 @@ class PIPE_INSPECTION {
         Eigen::Vector3d _pb_c;
         Eigen::Vector3d _e1_b_c;
         Eigen::Matrix3d _R_b_c;
+        ros::Time _last_img_stamp;
 
         cv::Mat _rgb;
         cv::Mat _depth;
@@ -869,6 +870,7 @@ void PIPE_INSPECTION::img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const se
     img_mutex.lock();
     _rgb = cv_ptr_rgb->image;
     _depth = cv_ptr_depth->image;
+    _last_img_stamp = rgb_msg->header.stamp;
 
     //cout << _depth.at<float>(240, 320 )   << endl;    
     _first_img = true;
@@ -988,7 +990,8 @@ void PIPE_INSPECTION::inspection()  {
             _landing_vect_pub.publish(land_vector);       
             // publish also tf
             geometry_msgs::TransformStamped transformStamped;
-            transformStamped.header.stamp = ros::Time::now();
+            //transformStamped.header.stamp = ros::Time::now();
+            transformStamped.header.stamp =  _last_img_stamp;
             transformStamped.header.frame_id = parent_frame;
             transformStamped.child_frame_id = "landing_frame";
             transformStamped.transform.translation.x = utilities::isnan(land_vector.pose.position.x) ? 0 : land_vector.pose.position.x;

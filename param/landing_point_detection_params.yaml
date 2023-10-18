@@ -1,35 +1,35 @@
 landing_point_detection:
   ### real drone
-  # rgb_image: "/pipecam/color/image_raw"
-  # depth_image: "/pipecam/aligned_depth_to_color/image_raw"
-  # depth_camera_info: "/pipecam/aligned_depth_to_color/camera_info"
-  # rgb_camera_info: "/pipecam/color/camera_info"
-  # depth_optical_frame: "pipecam_depth_optical_frame"
-  # rgb_optical_frame: "pipecam_color_optical_frame"
-  # depth_scale_factor: 0.001 #real camera
-  # depth_crop_px: 55
-  # depth_cutoff: 0.3
-  # depth_crop_px: 80 #crop pixels to avoid foots in cluster
-  # land_on_nearest_point: true
-  # max_iteration_count: 1500 #image operation anti-lock
-  # min_area_treshold: 1000 #min cluster area #deprecated
-  # max_dist_treshold: 2.0 #deprecated
-  # ar_marker_size: 0.045  #ar marker size [m]
-  # aruco_adaptiveThreshWinSizeStep: 4 #boh
-
-  ### simulation gazebo
-  rgb_image: "/depth_camera/depth_camera/image_raw"
-  depth_image: "/depth_camera/depth/disparity"
-  rgb_camera_info: "/depth_camera/depth_camera/camera_info"
-  depth_camera_info: "/depth_camera/depth_camera/camera_info"
-  depth_optical_frame: "camera_depth_optical_frame"
-  rgb_optical_frame: "camera_depth_optical_frame"
-  depth_scale_factor: 1.0 #sim
-  depth_crop_px: 100
-  depth_cutoff: 0.35
+  rgb_image: "/pipecam/color/image_raw"
+  depth_image: "/pipecam/aligned_depth_to_color/image_raw"
+  depth_camera_info: "/pipecam/aligned_depth_to_color/camera_info"
+  rgb_camera_info: "/pipecam/color/camera_info"
+  depth_optical_frame: "pipecam_depth_optical_frame"
+  rgb_optical_frame: "pipecam_color_optical_frame"
+  depth_scale_factor: 0.001 #real camera
+  depth_crop_px: 55
+  depth_cutoff: 0.3
+  depth_crop_px: 80 #crop pixels to avoid foots in cluster
   land_on_nearest_point: true
-  max_iteration_count: 1000
+  max_iteration_count: 1500 #image operation anti-lock
   min_area_treshold: 1000 #min cluster area #deprecated
   max_dist_treshold: 2.0 #deprecated
   ar_marker_size: 0.045  #ar marker size [m]
-  aruco_adaptiveThreshWinSizeStep: 4 #boh 
+  aruco_adaptiveThreshWinSizeStep: 4 #boh
+
+  # ### simulation gazebo
+  # rgb_image: "/depth_camera/depth_camera/image_raw"
+  # depth_image: "/depth_camera/depth/disparity"
+  # rgb_camera_info: "/depth_camera/depth_camera/camera_info"
+  # depth_camera_info: "/depth_camera/depth_camera/camera_info"
+  # depth_optical_frame: "camera_depth_optical_frame"
+  # rgb_optical_frame: "camera_depth_optical_frame"
+  # depth_scale_factor: 1.0 #sim
+  # depth_crop_px: 100
+  # depth_cutoff: 0.35
+  # land_on_nearest_point: true
+  # max_iteration_count: 1000
+  # min_area_treshold: 1000 #min cluster area #deprecated
+  # max_dist_treshold: 2.0 #deprecated
+  # ar_marker_size: 0.045  #ar marker size [m]
+  # aruco_adaptiveThreshWinSizeStep: 4 #boh 
