@@ -147,11 +147,14 @@ class PIPE_INSPECTION {
         float _inspection_distance = 0.8; 
         double _depth_scale_factor = 0.001; 
         double _depth_cutoff = 0.35;
-        int _depth_crop_px = 55;
+        // int _depth_crop_px = 55;
+        int _depth_crop_px_h = 55;
+        int _depth_crop_px_w = 55;
         bool _land_on_nearest_point = true;
         int _max_iteration_count = 1000;
         int _min_area_treshold = 600;
         double _max_dist_treshold = 1.8;
+        bool _rgb_is_gray = false;
         std::string _rgb_topic; 
         std::string _depth_topic; 
         std::string _depth_camera_info_topic;    
@@ -185,6 +188,8 @@ class PIPE_INSPECTION {
         float _cy;
         float _fx_inv; 
         float _fy_inv;
+        int _depth_w;
+        int _depth_h;
 
         vector< Eigen::Vector3d > _centroids;
         regressor3d regr;
@@ -252,8 +257,16 @@ void PIPE_INSPECTION::load_params(){
         ret =0;
     }
 
-    if( !_nh.getParam("/landing_point_detection/depth_crop_px", _depth_crop_px) ) {
-        _depth_crop_px =  55; // crop image to avoid clustering drone foots
+    // if( !_nh.getParam("/landing_point_detection/depth_crop_px", _depth_crop_px) ) {
+    //     _depth_crop_px =  55; // crop image to avoid clustering drone foots
+    //     ret =0;
+    // }
+     if( !_nh.getParam("/landing_point_detection/depth_crop_px_h", _depth_crop_px_h) ) {
+        _depth_crop_px_h =  55; // crop image to avoid clustering drone foots
+        ret =0;
+    }
+    if( !_nh.getParam("/landing_point_detection/depth_crop_px_w", _depth_crop_px_w) ) {
+        _depth_crop_px_w =  70; // crop image to avoid clustering drone foots
         ret =0;
     }
 
@@ -278,6 +291,10 @@ void PIPE_INSPECTION::load_params(){
   
     if( !_nh.getParam("/landing_point_detection/ar_marker_size", _marker_size) ) {
         _marker_size =  0.045; 
+        ret =0;
+    }
+    if( !_nh.getParam("/landing_point_detection/rgb_is_gray", _rgb_is_gray) ) {
+        _rgb_is_gray =  false; 
         ret =0;
     }
 
@@ -337,6 +354,8 @@ PIPE_INSPECTION::PIPE_INSPECTION() {
                 _cam_P->at<double>(i,j) = camera_info.P[4*i+j];
             }
         }
+        _depth_w = camera_info.width;
+        _depth_h = camera_info.height;
     }
     else{
         ROS_ERROR("not retrived depth camera info");
@@ -457,9 +476,11 @@ int PIPE_INSPECTION::pipeAxis_detect(cv::Mat depth_normalized, cv::Mat depthfloa
     double min;
     double max;
     int i = 0;
-    int d_crop = _depth_crop_px;
+    // int d_crop = _depth_crop_px;
     _centroids.clear();
-    cv::Rect crop_region(0, d_crop, 640, 480- d_crop);
+
+    // cv::Rect crop_region(0, d_crop, 640, 480- d_crop);
+    cv::Rect crop_region(0, _depth_crop_px_h, _depth_w -_depth_crop_px_w, _depth_h - _depth_crop_px_h); //realsense //[w h, w h]
     depth_normalized = depth_normalized(crop_region);
 
     for(int r=0;r<depth_normalized.rows;r++) {
@@ -859,7 +880,14 @@ void PIPE_INSPECTION::img_cb(const sensor_msgs::ImageConstPtr &rgb_msg, const se
 
     cv_bridge::CvImagePtr cv_ptr_rgb, cv_ptr_depth;
     try {
-       cv_ptr_rgb = cv_bridge::toCvCopy(rgb_msg, sensor_msgs::image_encodings::TYPE_8UC3);
+    //    cv_ptr_rgb = cv_bridge::toCvCopy(rgb_msg, sensor_msgs::image_encodings::TYPE_8UC3);
+       if(_rgb_is_gray){
+            cv_ptr_rgb = cv_bridge::toCvCopy(rgb_msg, sensor_msgs::image_encodings::TYPE_8UC1);
+        }
+        else{
+            cv_ptr_rgb = cv_bridge::toCvCopy(rgb_msg, sensor_msgs::image_encodings::TYPE_8UC3);
+        }
+
        cv_ptr_depth = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::TYPE_32FC1);
     }
     catch (cv_bridge::Exception& e) {

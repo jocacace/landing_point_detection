@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<launch>
+
+    <include file="$(find landing_point_detection)/launch/d400_pipe.launch"/>
+
+    <node pkg = "tf" type = "static_transform_publisher" name = "depthcam_to_pipecam" args = "0.011 0.018 0.013 0 0 0 depthcam_link pipecam_link 100" />
+
+
+    <include file="$(find royale_in_ros)/launch/camera_driver.launch"/>
+
+    <node pkg = "tf" type = "static_transform_publisher" name = "depthcam_to_royale" args = "0 0 0.05 3.14 0 1.57 depthcam_link royale_camera_link 100" />
+
+</launch>
